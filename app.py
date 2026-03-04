@@ -42,8 +42,8 @@ if not orders.empty and "平台" in orders.columns:
     plat_counts = orders.groupby("平台")["訂單編號"].nunique().reset_index()
     plat_counts.columns = ["平台", "訂單數"]
     cols = st.columns(len(plat_counts))
-    for i, row in plat_counts.iterrows():
-        with cols[i]:
+    for idx, (i, row) in enumerate(plat_counts.iterrows()):
+        with cols[idx]:
             st.metric(row["平台"], f"{row['訂單數']:,} 筆")
 
 # ── 近期訂單 ─────────────────────────────────────────────────
