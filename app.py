@@ -9,6 +9,7 @@ from utils.data_manager import (
     load_orders, append_orders, save_orders,
     load_storage, save_storage,
     load_compare_table, save_compare_table,
+    load_platform_orders, append_platform_orders,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
 from utils.calculators import auto_match_compare_table
@@ -159,12 +160,15 @@ with tab_storage:
 # Tab 2 – 匯入平台訂單
 # ══════════════════════════════════════════════════════════════
 with tab_order:
-    platform = st.selectbox("選擇平台", ["蝦皮", "露天", "官網 (EasyStore), MOMO"], index=0)
+    platform = st.selectbox("選擇平台", ["蝦皮", "露天", "官網 (EasyStore)", "MOMO"], index=0)
     uploaded = st.file_uploader(
         "上傳訂單檔案",
         type=["xlsx", "xls", "csv"],
         key="order_upload",
     )
+
+    # 平台名稱 → 檔案名稱對應
+    _PLAT_FILE = {"蝦皮": "蝦皮", "露天": "露天", "官網": "官網", "MOMO": "MOMO"}
 
     if uploaded and st.button("🚀 開始匯入訂單", type="primary"):
         try:
@@ -180,6 +184,12 @@ with tab_order:
                 st.warning("未解析到任何訂單")
             else:
                 append_orders(new)
+
+                # 寫入平台專屬 xlsx（累積 + 去重）
+                plat_key = new["平台"].iloc[0] if "平台" in new.columns else ""
+                plat_file = _PLAT_FILE.get(plat_key, plat_key)
+                if plat_file:
+                    append_platform_orders(new, plat_file)
 
                 # 自動更新對照表
                 stg = load_storage()
@@ -198,14 +208,11 @@ with tab_order:
             st.info("💡 蝦皮資料若讀取失敗，請嘗試從賣家中心匯出 **CSV** 格式")
 
     st.markdown("---")
-    st.subheader("目前已匯入的訂單")
-    orders = load_orders()
-    if not orders.empty:
-        cols = st.columns(3)
-        for i, plat in enumerate(["蝦皮", "露天", "官網"]):
-            with cols[i]:
-                cnt = len(orders[orders["平台"] == plat])
-                st.metric(plat, f"{cnt} 筆")
-        st.dataframe(orders, use_container_width=True, hide_index=True)
-    else:
-        st.info("尚未匯入任何訂單")
+    st.subheader("各平台累積訂單")
+    for plat_name, plat_file in [("\U0001f6d2 蝦皮", "蝦皮"), ("\U0001f3ea 露天", "露天"), ("\U0001f310 官網", "官網")]:
+        pdf = load_platform_orders(plat_file)
+        st.markdown(f"**{plat_name}**（{len(pdf)} 筆）")
+        if not pdf.empty:
+            st.dataframe(pdf, use_container_width=True, hide_index=True)
+        else:
+            st.info(f"尚未匯入{plat_file}訂單")

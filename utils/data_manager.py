@@ -31,10 +31,7 @@ def append_orders(new_df: pd.DataFrame) -> pd.DataFrame:
         combined = new_df.copy()
     else:
         combined = pd.concat([existing, new_df], ignore_index=True)
-        combined = combined.drop_duplicates(
-            subset=["訂單編號", "平台商品名稱", "數量", "單價"],
-            keep="last",
-        )
+        combined = combined.drop_duplicates(keep="last")
     save_orders(combined)
     return combined
 
@@ -71,6 +68,30 @@ def save_storage(df: pd.DataFrame):
         df = df.drop_duplicates(subset=existing_cols, keep="last").reset_index(drop=True)
     out = df.rename(columns=_STORAGE_COL_MAP_REV)
     out.to_excel(path, index=False, engine="openpyxl")
+
+# ── 各平台訂單 xlsx ─────────────────────────────────────────
+def load_platform_orders(platform_name: str) -> pd.DataFrame:
+    """從 data/{platform_name}.xlsx 讀取該平台累積訂單。"""
+    path = DATA_DIR / f"{platform_name}.xlsx"
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            return pd.read_excel(path, engine="openpyxl")
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataFrame:
+    """將新訂單追加至 data/{platform_name}.xlsx，全欄位去重。"""
+    existing = load_platform_orders(platform_name)
+    if existing.empty:
+        combined = new_df.copy()
+    else:
+        combined = pd.concat([existing, new_df], ignore_index=True)
+    combined = combined.drop_duplicates(keep="last")
+    combined = combined.reset_index(drop=True)
+    path = DATA_DIR / f"{platform_name}.xlsx"
+    combined.to_excel(path, index=False, engine="openpyxl")
+    return combined
 
 # ── 對照表 ──────────────────────────────────────────────────
 def load_compare_table() -> pd.DataFrame:
