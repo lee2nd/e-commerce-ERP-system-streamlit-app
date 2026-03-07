@@ -2,7 +2,6 @@
 資料持久化層 — 讀寫 CSV / JSON，統一管理 data/ 目錄。
 """
 import pandas as pd
-import json
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -39,12 +38,39 @@ def append_orders(new_df: pd.DataFrame) -> pd.DataFrame:
     save_orders(combined)
     return combined
 
-# ── 入庫 ────────────────────────────────────────────────────
+# ── 入庫（讀寫 入庫.xlsx）────────────────────────────────────
+# xlsx 欄位 → 系統欄位的映射
+_STORAGE_COL_MAP = {
+    "名稱": "商品名稱",
+    "入庫數量": "數量",
+    "單價": "單位成本",
+    "金額": "總金額",
+}
+# 反向映射（系統 → xlsx）
+_STORAGE_COL_MAP_REV = {v: k for k, v in _STORAGE_COL_MAP.items()}
+
 def load_storage() -> pd.DataFrame:
-    return _load("storage")
+    """從 data/入庫.xlsx 讀取入庫資料，欄位自動映射為系統格式。"""
+    path = DATA_DIR / "入庫.xlsx"
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            df = pd.read_excel(path, engine="openpyxl")
+            df = df.rename(columns=_STORAGE_COL_MAP)
+            return df
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
 
 def save_storage(df: pd.DataFrame):
-    _save(df, "storage")
+    """將入庫資料寫回 data/入庫.xlsx，自動去重後欄位映射回 xlsx 格式。"""
+    path = DATA_DIR / "入庫.xlsx"
+    # 以「貨號 + 規格 + 數量 + 單位成本 + 入庫日期」去重，保留最後一筆
+    dedup_cols = ["貨號", "規格", "數量", "單位成本", "入庫日期"]
+    existing_cols = [c for c in dedup_cols if c in df.columns]
+    if existing_cols:
+        df = df.drop_duplicates(subset=existing_cols, keep="last").reset_index(drop=True)
+    out = df.rename(columns=_STORAGE_COL_MAP_REV)
+    out.to_excel(path, index=False, engine="openpyxl")
 
 # ── 對照表 ──────────────────────────────────────────────────
 def load_compare_table() -> pd.DataFrame:

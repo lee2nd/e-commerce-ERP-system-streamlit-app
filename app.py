@@ -59,39 +59,27 @@ with tab_storage:
             st.dataframe(raw_df, use_container_width=True, hide_index=True)
 
             if st.button("🚀 確認匯入入庫資料", type="primary"):
-                # 對應欄位到系統格式
-                col_map = {
-                    "貨號": "主貨號",
-                    "名稱": "商品名稱",
-                    "規格": "規格",
-                    "入庫數量": "數量",
-                    "單價": "單位成本",
-                    "金額": "總金額",
-                    "入庫日期": "入庫日期",
-                }
-                # 先檢查必要欄位
-                missing = [k for k in col_map if k not in raw_df.columns]
+                # 檢查必要欄位（入庫.xlsx 格式）
+                required_cols = ["主貨號", "貨號", "名稱", "規格", "入庫數量", "單價", "金額", "入庫日期"]
+                missing = [c for c in required_cols if c not in raw_df.columns]
                 if missing:
                     st.error(f"缺少必要欄位：{', '.join(missing)}")
                 else:
+                    # 對應欄位到系統格式
+                    col_map = {
+                        "名稱": "商品名稱",
+                        "入庫數量": "數量",
+                        "單價": "單位成本",
+                        "金額": "總金額",
+                    }
                     new_stg = raw_df.rename(columns=col_map).copy()
-
-                    # 產生貨號（主貨號 + 規格）
-                    new_stg["貨號"] = (
-                        new_stg["主貨號"].astype(str).str.strip()
-                        + "-"
-                        + new_stg["規格"].astype(str).str.strip()
-                    )
 
                     # 確保數值型態
                     new_stg["數量"] = pd.to_numeric(new_stg["數量"], errors="coerce").fillna(0).astype(int)
                     new_stg["單位成本"] = pd.to_numeric(new_stg["單位成本"], errors="coerce").fillna(0)
-                    if "總金額" not in new_stg.columns or new_stg["總金額"].isna().all():
-                        new_stg["總金額"] = new_stg["數量"] * new_stg["單位成本"]
-                    else:
-                        new_stg["總金額"] = pd.to_numeric(new_stg["總金額"], errors="coerce").fillna(
-                            new_stg["數量"] * new_stg["單位成本"]
-                        )
+                    new_stg["總金額"] = pd.to_numeric(new_stg["總金額"], errors="coerce").fillna(
+                        new_stg["數量"] * new_stg["單位成本"]
+                    )
 
                     # 入庫日期
                     new_stg["入庫日期"] = pd.to_datetime(
@@ -102,16 +90,13 @@ with tab_storage:
                     )
 
                     # 保留系統需要的欄位順序
-                    keep_cols = ["主貨號", "商品名稱", "規格", "貨號", "數量", "單位成本", "總金額", "入庫日期"]
+                    keep_cols = ["主貨號", "貨號", "商品名稱", "規格", "數量", "單位成本", "總金額", "入庫日期"]
                     new_stg = new_stg[keep_cols]
 
-                    # 合併既有入庫資料並儲存
-                    existing = load_storage()
-                    combined = pd.concat([existing, new_stg], ignore_index=True).drop_duplicates()
-                    save_storage(combined)
+                    # 整份取代（使用者應在 Excel 中保留舊資料 + 新增資料後上傳）
+                    save_storage(new_stg)
 
-                    st.success(f"✅ 成功匯入 **{len(new_stg)}** 筆入庫資料，已儲存至 data/storage.csv")
-                    st.dataframe(new_stg, use_container_width=True, hide_index=True)
+                    st.success(f"✅ 成功匯入 **{len(new_stg)}** 筆入庫資料，已儲存至 data/入庫.xlsx")
         except Exception as e:
             st.error(f"匯入失敗：{e}")
 
@@ -121,37 +106,32 @@ with tab_storage:
     with st.form("add_stg", clear_on_submit=True):
         r1 = st.columns(4)
         main_sku = r1[0].text_input("主貨號")
-        name     = r1[1].text_input("商品名稱")
-        spec     = r1[2].text_input("規格")
-        sku      = r1[3].text_input("貨號（留空自動產生）")
-        r2 = st.columns(3)
+        sku      = r1[1].text_input("貨號（留空自動產生）")
+        name     = r1[2].text_input("商品名稱")
+        spec     = r1[3].text_input("規格")
+        r2 = st.columns(4)
         qty       = r2[0].number_input("數量", min_value=1, value=1)
         unit_cost = r2[1].number_input("單位成本", min_value=0.0, step=0.1)
         stg_date  = r2[2].date_input("入庫日期")
         if st.form_submit_button("➕ 新增"):
-            if not all([main_sku, name]):
-                st.error("請至少填寫主貨號、商品名稱")
-            else:
-                if not sku:
-                    sku = f"{main_sku}-{spec}" if spec else main_sku
-                row = pd.DataFrame([{
-                    "主貨號": main_sku, "商品名稱": name, "規格": spec,
-                    "貨號": sku, "數量": qty, "單位成本": unit_cost,
-                    "總金額": qty * unit_cost, "入庫日期": str(stg_date),
-                }])
-                existing = load_storage()
-                save_storage(pd.concat([existing, row], ignore_index=True))
-                st.success("新增成功")
-                st.rerun()
+            if not sku:
+                sku = f"{main_sku}-{spec}" if spec else main_sku
+            total = qty * unit_cost
+            row = pd.DataFrame([{
+                "主貨號": main_sku, "貨號": sku, "商品名稱": name,
+                "規格": spec, "數量": qty, "單位成本": unit_cost,
+                "總金額": total, "入庫日期": str(stg_date),
+            }])
+            existing = load_storage()
+            save_storage(pd.concat([existing, row], ignore_index=True))
+            st.success("新增成功")
+            st.rerun()
 
     st.markdown("---")
     st.subheader("目前入庫資料")
     storage = load_storage()
     if not storage.empty:
         st.dataframe(storage, use_container_width=True, hide_index=True)
-        if st.button("🗑️ 清空入庫"):
-            save_storage(pd.DataFrame())
-            st.rerun()
     else:
         st.info("尚未有入庫資料")
 
