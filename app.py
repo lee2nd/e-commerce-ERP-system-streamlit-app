@@ -13,6 +13,25 @@ from utils.data_manager import (
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
 from utils.calculators import auto_match_compare_table
 
+# 調整元件的樣式
+st.markdown("""
+    <style>
+    [data-testid="stFileUploader"] {
+        max-width: 150px;
+    }
+    [data-testid="stFileUploaderDropzoneInstructions"] {
+        display: none;
+    </style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+    <style>
+    [data-testid="stSelectbox"] {
+        max-width: 150px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("📊 電商平台 ERP & 報表系統")
 st.caption("蝦皮 ｜ 露天 ｜ 官網 (EasyStore) ｜ MOMO")
 st.markdown("---")
@@ -51,43 +70,8 @@ with tab_storage:
     else:
         st.warning("找不到範本檔案 data/入庫.xlsx")
 
-    st.markdown("""
-        <style>
-        [data-testid="stFileUploader"] {
-            max-width: 120px;
-        }
-        [data-testid="stFileUploaderDropzoneInstructions"] {
-            display: none;
-        }
-        [data-testid="stFileUploaderDropzone"] {
-            border: 1px solid #d0d0d0 !important;
-            border-radius: 6px !important;
-            background: transparent;
-            padding: 0;
-            min-height: unset !important;
-        }
-        [data-testid="stFileUploaderDropzone"] button {
-            visibility: hidden;
-            position: relative;
-            background-color: transparent;
-            border: none;
-            padding: 6px 16px;
-            width: 100%;
-        }
-        [data-testid="stFileUploaderDropzone"] button::after {
-            content: "⬆ 上傳入庫";
-            visibility: visible;
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            color: black;
-            white-space: nowrap;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
     stg_file = st.file_uploader(
-        "",
+        "⬆ 上傳入庫",
         type=["xlsx", "xls", "csv"],
         key="stg_upload",
     )
@@ -175,9 +159,9 @@ with tab_storage:
 # Tab 2 – 匯入平台訂單
 # ══════════════════════════════════════════════════════════════
 with tab_order:
-    platform = st.selectbox("選擇平台", ["蝦皮", "露天", "官網 (EasyStore)"])
+    platform = st.selectbox("選擇平台", ["蝦皮", "露天", "官網 (EasyStore), MOMO"], index=0)
     uploaded = st.file_uploader(
-        "上傳訂單檔案（.xlsx / .xls / .csv）",
+        "上傳訂單檔案",
         type=["xlsx", "xls", "csv"],
         key="order_upload",
     )
@@ -223,9 +207,5 @@ with tab_order:
                 cnt = len(orders[orders["平台"] == plat])
                 st.metric(plat, f"{cnt} 筆")
         st.dataframe(orders, use_container_width=True, hide_index=True)
-
-        if st.button("🗑️ 清空所有訂單"):
-            save_orders(pd.DataFrame())
-            st.rerun()
     else:
         st.info("尚未匯入任何訂單")
