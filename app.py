@@ -225,7 +225,7 @@ with tab_order:
                 save_compare_table(updated)
 
                 st.success(f"✅ 成功匯入 **{len(new)}** 筆訂單")
-                st.dataframe(new.head(30), use_container_width=True, hide_index=True)
+                st.dataframe(raw_preview.head(30), use_container_width=True, hide_index=True)
 
         except Exception as e:
             st.error(f"匯入失敗：{e}")
