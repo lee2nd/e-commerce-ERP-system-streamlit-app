@@ -76,7 +76,7 @@ def parse_shopee(file) -> pd.DataFrame:
 
     prod = df[c_prod].fillna("").astype(str)
     var  = df[c_var].fillna("").astype(str) if c_var else ""
-    out["平台商品名稱"] = prod + "[" + var + "]"
+    out["平台商品名稱"] = prod + "::" + var
 
     out["貨號"] = df[c_sku].astype(str).str.strip() if c_sku else ""
     out["數量"] = pd.to_numeric(df[c_qty], errors="coerce").fillna(0).astype(int)
@@ -118,7 +118,7 @@ def parse_ruten(file) -> pd.DataFrame:
     name = df["商品名稱"].fillna("").astype(str)
     spec = df["規格"].fillna("").astype(str)
     item = df["項目"].fillna("").astype(str)
-    out["平台商品名稱"] = name + "[" + spec + "," + item + "]"
+    out["平台商品名稱"] = name + "::" + spec + "::" + item
 
     out["貨號"] = df["賣家自用料號"].astype(str).str.strip() if "賣家自用料號" in df.columns else ""
     out["數量"] = pd.to_numeric(df["數量"], errors="coerce").fillna(0).astype(int)
@@ -167,7 +167,7 @@ def parse_easystore(file) -> pd.DataFrame:
 
     item_name = df["Item Name"].fillna("").astype(str)
     item_var  = df["Item Variant"].fillna("").astype(str) if "Item Variant" in df.columns else ""
-    out["平台商品名稱"] = item_name + "[" + item_var + "]"
+    out["平台商品名稱"] = item_name + "::" + item_var
 
     out["貨號"] = df["Item SKU"].astype(str).str.strip() if "Item SKU" in df.columns else ""
     out["數量"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)

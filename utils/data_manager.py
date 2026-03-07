@@ -93,12 +93,19 @@ def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataF
     combined.to_excel(path, index=False, engine="openpyxl")
     return combined
 
-# ── 對照表 ──────────────────────────────────────────────────
+# ── 對照表（讀寫 對照表.xlsx）──────────────────────────────────────────
 def load_compare_table() -> pd.DataFrame:
-    return _load("compare_table")
+    path = DATA_DIR / "對照表.xlsx"
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            return pd.read_excel(path, engine="openpyxl")
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
 
 def save_compare_table(df: pd.DataFrame):
-    _save(df, "compare_table")
+    path = DATA_DIR / "對照表.xlsx"
+    df.to_excel(path, index=False, engine="openpyxl")
 
 # ── 日報表 ──────────────────────────────────────────────────
 def load_daily_report() -> pd.DataFrame:

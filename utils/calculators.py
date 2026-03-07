@@ -9,44 +9,38 @@ import pandas as pd
 # ══════════════════════════════════════════════════════════════
 def auto_match_compare_table(
     orders_df: pd.DataFrame,
-    storage_df: pd.DataFrame,
+    storage_df: pd.DataFrame = None,
     existing_compare_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if orders_df.empty:
         return existing_compare_df if existing_compare_df is not None else pd.DataFrame()
 
     new_prods = (
-        orders_df[["平台商品名稱", "平台", "貨號"]]
-        .drop_duplicates("平台商品名稱")
+        orders_df[["平台商品名稱", "平台"]]
+        .drop_duplicates(subset=["平台商品名稱", "平台"])
         .copy()
     )
 
     # 去除已存在的
     if existing_compare_df is not None and not existing_compare_df.empty:
-        known = set(existing_compare_df["平台商品名稱"])
-        new_prods = new_prods[~new_prods["平台商品名稱"].isin(known)]
+        known = set(
+            existing_compare_df["平台商品名稱"].astype(str)
+            + "||" + existing_compare_df["平台"].astype(str)
+        )
+        new_prods = new_prods[
+            ~(new_prods["平台商品名稱"].astype(str)
+              + "||" + new_prods["平台"].astype(str)).isin(known)
+        ]
 
     if new_prods.empty:
         return existing_compare_df if existing_compare_df is not None else pd.DataFrame()
 
-    entries = new_prods.rename(columns={}).copy()
+    entries = new_prods.copy()
     entries["主貨號"] = ""
+    entries["貨號"] = ""
+    entries["入庫品名"] = ""
 
-    # 清理無效貨號
-    entries.loc[entries["貨號"].isin(["nan", "None", "", "0"]), "貨號"] = ""
-
-    # 若入庫表有貨號 → 自動補主貨號
-    if not storage_df.empty and "貨號" in storage_df.columns:
-        smap = storage_df[["貨號", "主貨號"]].drop_duplicates("貨號")
-        entries = entries.merge(
-            smap.rename(columns={"主貨號": "_主貨號"}),
-            on="貨號", how="left",
-        )
-        mask = entries["_主貨號"].notna() & (entries["_主貨號"] != "")
-        entries.loc[mask, "主貨號"] = entries.loc[mask, "_主貨號"]
-        entries.drop(columns=["_主貨號"], inplace=True)
-
-    result_cols = ["平台商品名稱", "平台", "主貨號", "貨號"]
+    result_cols = ["平台商品名稱", "平台", "入庫品名", "貨號", "主貨號"]
     if existing_compare_df is not None and not existing_compare_df.empty:
         for c in result_cols:
             if c not in existing_compare_df.columns:
@@ -58,7 +52,7 @@ def auto_match_compare_table(
     else:
         result = entries[result_cols].copy()
 
-    return result.drop_duplicates("平台商品名稱").reset_index(drop=True)
+    return result.drop_duplicates(subset=["平台商品名稱", "平台"]).reset_index(drop=True)
 
 
 # ══════════════════════════════════════════════════════════════
