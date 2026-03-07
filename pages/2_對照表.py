@@ -1,25 +1,21 @@
-"""
-對照表管理 — 平台商品名稱 ↔ 入庫品名 對照，自動帶出貨號
-"""
 import streamlit as st
 import pandas as pd
-
-st.set_page_config(page_title="對照表管理", page_icon="📋", layout="wide")
-
+import io
 from utils.data_manager import (
     load_compare_table, save_compare_table,
     load_storage,
     load_platform_orders,
 )
-from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
+from utils.parsers import parse_shopee, parse_ruten, parse_easystore
 from utils.calculators import auto_match_compare_table
 
+st.set_page_config(page_title="對照表管理", page_icon="📋", layout="wide")
 st.title("📋 對照表管理")
 
 compare = load_compare_table()
 storage = load_storage()
 
-# ── 從入庫.xlsx 建立「入庫品名」下拉清單與貨號映射 ──────────────
+# 從入庫.xlsx 建立「入庫品名」下拉清單與貨號映射
 stg_mapping: dict[str, dict] = {}   # 入庫品名 → {貨號, 主貨號}
 if not storage.empty:
     for _, row in storage.drop_duplicates(subset=["名稱", "規格"] if "名稱" in storage.columns
@@ -34,11 +30,7 @@ if not storage.empty:
             }
 stg_options = [""] + sorted(stg_mapping.keys())
 
-# ── 確保 入庫品名 欄位存在 ───────────────────────────────────
-if not compare.empty and "入庫品名" not in compare.columns:
-    compare["入庫品名"] = ""
-
-# ── 統計 ─────────────────────────────────────────────────────
+# 統計
 if not compare.empty:
     total = len(compare)
     matched = int(
@@ -49,10 +41,7 @@ if not compare.empty:
     c2.metric("已匹配", matched)
     c3.metric("未匹配", total - matched)
 
-# ── 重新自動匹配 / 清空 ─────────────────────────────────────
-
 if st.button("🔄 重新掃描訂單（新增未匹配項目）", type="primary"):
-    import io
     parts = []
     for plat, parser in [("蝦皮", parse_shopee), ("露天", parse_ruten), ("官網", parse_easystore)]:
         raw = load_platform_orders(plat)
@@ -73,21 +62,23 @@ if st.button("🔄 重新掃描訂單（新增未匹配項目）", type="primary
         st.warning("無訂單資料可匹配，請先至首頁匯入平台訂單")
     else:
         updated = auto_match_compare_table(orders, storage, compare)
+        # 依平台排序
+        _plat_order = {"蝦皮": 0, "露天": 1, "官網": 2}
+        updated["_sort"] = updated["平台"].map(_plat_order).fillna(9)
+        updated = updated.sort_values(["_sort", "平台商品名稱"]).drop(columns="_sort").reset_index(drop=True)
         save_compare_table(updated)
         st.success(f"掃描完成！對照表共 {len(updated)} 筆")
         st.rerun()
 
-# ── 可編輯對照表 ─────────────────────────────────────────────
+# user 編輯對照表
 if not compare.empty:
-    st.subheader("對照表")
     st.caption(
-        "在「入庫品名」欄用下拉選單選擇對應的入庫商品，按下方「✅ 確認並自動帶出貨號」會自動填入貨號與主貨號"
+        "在「入庫品名」欄用下拉選單選擇對應的入庫商品，確認入庫品名都填寫完，按下方「✅ 確認並自動帶出貨號」會自動填入貨號與主貨號"
     )
-
-    # 篩選
     filter_opt = st.radio(
-        "篩選", ["全部", "未匹配", "已匹配"],
+        "", ["全部", "未匹配", "已匹配"],
         horizontal=True, key="cmp_filter",
+        label_visibility="collapsed",
     )
     view = compare.copy()
     if filter_opt == "未匹配":
@@ -98,43 +89,56 @@ if not compare.empty:
     if view.empty:
         st.info("沒有符合條件的項目")
     else:
+        # 平台顏色標註
+        _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
+
+        def _highlight_platform(row):
+            color = _PLAT_COLORS.get(row["平台"], "")
+            if color:
+                return [f"background-color: {color}20; color: {color}" if c == "平台"
+                        else f"background-color: {color}10" for c in row.index]
+            return [""] * len(row)
+
+        styled_view = view.style.apply(_highlight_platform, axis=1)
+
         edited = st.data_editor(
-            view,
+            styled_view,
             use_container_width=True,
             hide_index=True,
             column_config={
-                "平台商品名稱": st.column_config.TextColumn(
-                    "Orders 品名", disabled=True, width="large",
-                ),
+                # disabled=True -> 讓該欄位無法編輯，使用者只能看不能改
                 "平台": st.column_config.TextColumn("平台", disabled=True, width="small"),
+                "平台商品名稱": st.column_config.TextColumn(
+                    "平台商品名稱", disabled=True, width="large",
+                ),
                 "入庫品名": st.column_config.SelectboxColumn(
                     "入庫品名", options=stg_options, width="large",
                 ),
-                "貨號": st.column_config.TextColumn("貨號", disabled=True, width="medium"),
                 "主貨號": st.column_config.TextColumn("主貨號", disabled=True, width="medium"),
+                "貨號": st.column_config.TextColumn("貨號", disabled=True, width="medium"),
             },
-            column_order=["平台商品名稱", "平台", "入庫品名", "貨號", "主貨號"],
+            column_order=["平台", "平台商品名稱",  "入庫品名", "主貨號",  "貨號"],
             key="compare_editor",
         )
 
-        if st.button("✅ 確認並自動帶出貨號", type="primary"):
-            # 根據選擇的入庫品名自動填入貨號、主貨號
-            for idx in edited.index:
-                stg_name = str(edited.at[idx, "入庫品名"]).strip()
-                if stg_name and stg_name in stg_mapping:
-                    edited.at[idx, "貨號"] = stg_mapping[stg_name]["貨號"]
-                    edited.at[idx, "主貨號"] = stg_mapping[stg_name]["主貨號"]
+        # if st.button("✅ 確認並自動帶出貨號", type="primary"):
+        #     # 根據選擇的入庫品名自動填入貨號、主貨號
+        #     for idx in edited.index:
+        #         stg_name = str(edited.at[idx, "入庫品名"]).strip()
+        #         if stg_name and stg_name in stg_mapping:
+        #             edited.at[idx, "貨號"] = stg_mapping[stg_name]["貨號"]
+        #             edited.at[idx, "主貨號"] = stg_mapping[stg_name]["主貨號"]
 
-            # 合併回完整對照表
-            view_keys = set(view["平台商品名稱"].astype(str) + "||" + view["平台"].astype(str))
-            unchanged = compare[
-                ~(compare["平台商品名稱"].astype(str) + "||" + compare["平台"].astype(str)).isin(view_keys)
-            ]
-            saved = pd.concat([unchanged, edited], ignore_index=True)
-            saved = saved.drop_duplicates(subset=["平台商品名稱", "平台"])
-            save_compare_table(saved)
-            st.success("已儲存！貨號已自動帶出")
-            st.rerun()
+        #     # 合併回完整對照表
+        #     view_keys = set(view["平台商品名稱"].astype(str) + "||" + view["平台"].astype(str))
+        #     unchanged = compare[
+        #         ~(compare["平台商品名稱"].astype(str) + "||" + compare["平台"].astype(str)).isin(view_keys)
+        #     ]
+        #     saved = pd.concat([unchanged, edited], ignore_index=True)
+        #     saved = saved.drop_duplicates(subset=["平台商品名稱", "平台"])
+        #     save_compare_table(saved)
+        #     st.success("已儲存！貨號已自動帶出")
+        #     st.rerun()
 
 else:
     st.info("對照表為空，請先至首頁「匯入平台訂單」上傳訂單資料")
