@@ -106,7 +106,7 @@ with tab_storage:
     with st.form("add_stg", clear_on_submit=True):
         r1 = st.columns(4)
         main_sku = r1[0].text_input("主貨號")
-        sku      = r1[1].text_input("貨號（留空自動產生）")
+        sku      = r1[1].text_input("貨號")
         name     = r1[2].text_input("商品名稱")
         spec     = r1[3].text_input("規格")
         r2 = st.columns(4)
