@@ -170,8 +170,36 @@ with tab_order:
     # 平台名稱 → 檔案名稱對應
     _PLAT_FILE = {"蝦皮": "蝦皮", "露天": "露天", "官網": "官網", "MOMO": "MOMO"}
 
+    # 各平台特徵欄位數（用來驗證上傳檔案是否與所選平台一致）
+    _PLAT_COL_COUNT = {
+        "蝦皮": 57,
+        "露天": 26,
+        "官網": 77,
+    }
+
+    def _check_platform_columns(col_count, selected_platform):
+        """回傳 (通過, 錯誤訊息)。檢查上傳檔案欄位數是否符合所選平台。"""
+        expected = _PLAT_COL_COUNT.get(selected_platform)
+        if expected and col_count != expected:
+            # 嘗試辨識實際平台
+            for pname, pcnt in _PLAT_COL_COUNT.items():
+                if col_count == pcnt:
+                    return False, f"檔案欄位數不符！您選擇了 **{selected_platform}**（應為 {expected} 欄），但檔案有 **{col_count}** 欄，看起來是 **{pname}** 的格式。"
+            return False, f"檔案欄位數不符！您選擇了 **{selected_platform}**（應為 {expected} 欄），但檔案有 **{col_count}** 欄，請確認上傳正確的檔案。"
+        return True, ""
+
     if uploaded and st.button("🚀 開始匯入訂單", type="primary"):
         try:
+            # 先讀取原始檔案做欄位檢查
+            raw_preview = read_file_flexible(uploaded)
+            uploaded.seek(0)  # 重置指標供後續 parser 使用
+
+            plat_short = "蝦皮" if "蝦皮" in platform else ("露天" if "露天" in platform else "官網")
+            col_ok, col_msg = _check_platform_columns(len(raw_preview.columns), plat_short)
+            if not col_ok:
+                st.error(col_msg)
+                st.stop()
+
             with st.spinner("解析中…"):
                 if "蝦皮" in platform:
                     new = parse_shopee(uploaded)
@@ -185,11 +213,10 @@ with tab_order:
             else:
                 append_orders(new)
 
-                # 寫入平台專屬 xlsx（累積 + 去重）
-                plat_key = new["平台"].iloc[0] if "平台" in new.columns else ""
-                plat_file = _PLAT_FILE.get(plat_key, plat_key)
+                # 寫入平台專屬 xlsx（累積原始資料 + 去重）
+                plat_file = _PLAT_FILE.get(plat_short, plat_short)
                 if plat_file:
-                    append_platform_orders(new, plat_file)
+                    append_platform_orders(raw_preview, plat_file)
 
                 # 自動更新對照表
                 stg = load_storage()
@@ -200,12 +227,8 @@ with tab_order:
                 st.success(f"✅ 成功匯入 **{len(new)}** 筆訂單")
                 st.dataframe(new.head(30), use_container_width=True, hide_index=True)
 
-                if not updated.empty:
-                    matched = int((updated["貨號"].notna() & (updated["貨號"] != "")).sum())
-                    st.info(f"對照表：{matched} / {len(updated)} 商品已自動匹配貨號")
         except Exception as e:
             st.error(f"匯入失敗：{e}")
-            st.info("💡 蝦皮資料若讀取失敗，請嘗試從賣家中心匯出 **CSV** 格式")
 
     st.markdown("---")
     st.subheader("各平台累積訂單")
