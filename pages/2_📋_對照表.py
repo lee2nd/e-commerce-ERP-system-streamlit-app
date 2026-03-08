@@ -9,8 +9,8 @@ from utils.data_manager import (
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore
 from utils.calculators import auto_match_compare_table
 
-st.set_page_config(page_title="對照表管理", page_icon="📋", layout="wide")
-st.title("📋 對照表管理")
+st.set_page_config(page_title="對照表", page_icon="📋", layout="wide")
+st.title("📋 對照表")
 
 compare = load_compare_table()
 storage = load_storage()

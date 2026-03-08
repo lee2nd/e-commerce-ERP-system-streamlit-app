@@ -8,8 +8,8 @@ from utils.data_manager import (
     save_delivery,
 )
 
-st.set_page_config(page_title="產生出庫", page_icon="📦", layout="wide")
-st.title("📦 產生出庫")
+st.set_page_config(page_title="導出出庫", page_icon="📦", layout="wide")
+st.title("📦 導出出庫")
 
 # 載入對照表與入庫資料，建立映射
 compare = load_compare_table()
@@ -163,20 +163,24 @@ def generate_delivery() -> pd.DataFrame:
             
             records.append({
                 "主貨號": main_sku,
+                "貨號": sku,
                 "名稱": prod_name,
                 "規格": prod_spec,
-                "數量": order_data["數量"],
+                "出庫數量": order_data["數量"],
                 "單價": order_data["單價"],
                 "金額": order_data["數量"] * order_data["單價"],
-                "日期": order_data["日期"],
+                "出庫日期": order_data["日期"],
                 "平台": platform,
-                "貨號": sku,
             })
     
     if records:
         df = pd.DataFrame(records)
-        # 依日期排序
-        df = df.sort_values("日期").reset_index(drop=True)
+        # 統一日期格式後依日期排序（兼容 YYYY/MM/DD 與 YYYY-MM-DD）
+        df["出庫日期"] = df["出庫日期"].apply(
+            lambda v: pd.to_datetime(v, dayfirst=False, errors="coerce").strftime("%Y-%m-%d")
+            if pd.notna(pd.to_datetime(v, dayfirst=False, errors="coerce")) else ""
+        )
+        df = df.sort_values("出庫日期").reset_index(drop=True)
         return df
     return pd.DataFrame()
 
@@ -184,11 +188,46 @@ def generate_delivery() -> pd.DataFrame:
 # 統計現有出庫資料
 existing_delivery = load_delivery()
 if not existing_delivery.empty:
-    c1, c2, c3, c4 = st.columns(4)
+    # c1, c2, c3, c4, c5 = st.columns(5)
+    # c1.metric("總筆數", len(existing_delivery))
+    # c2.metric("總金額", f"${existing_delivery['金額'].sum():,.0f}")
+    # c3.metric("蝦皮", len(existing_delivery[existing_delivery["平台"] == "蝦皮"]))
+    # c4.metric("露天", len(existing_delivery[existing_delivery["平台"] == "露天"]))
+    # c5.metric("官網", len(existing_delivery[existing_delivery["平台"] == "官網"]))
+
+    # 定義顏色對照表
+    colors = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
+
+    # 建立欄位
+    c1, c2, c3, c4, c5 = st.columns(5)
+
+    # 1. 總筆數 (預設樣式)
     c1.metric("總筆數", len(existing_delivery))
+
+    # 2. 總金額 (預設樣式)
     c2.metric("總金額", f"${existing_delivery['金額'].sum():,.0f}")
-    c3.metric("蝦皮", len(existing_delivery[existing_delivery["平台"] == "蝦皮"]))
-    c4.metric("露天/官網", len(existing_delivery[existing_delivery["平台"] != "蝦皮"]))
+
+    # 定義一個共用的顯示函數，方便重複使用
+    def custom_metric(label, value, color, column):
+        column.markdown(
+            f"""
+            <div style="border-left: 3px solid {color}; padding-left: 10px; border-radius: 4px;">
+                <p style="font-size: 14px; color: #606060; margin-bottom: 0px;">{label}</p>
+                <p style="font-size: 24px; font-weight: bold; color: {color}; margin-top: -5px;">{value}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    # 3. 蝦皮
+    shopee_count = len(existing_delivery[existing_delivery["平台"] == "蝦皮"])
+    custom_metric("蝦皮", shopee_count, colors["蝦皮"], c3)
+    # 4. 露天
+    ruten_count = len(existing_delivery[existing_delivery["平台"] == "露天"])
+    custom_metric("露天", ruten_count, colors["露天"], c4)
+    # 5. 官網
+    official_count = len(existing_delivery[existing_delivery["平台"] == "官網"])
+    custom_metric("官網", official_count, colors["官網"], c5)
+
 
 # 顯示對照表匹配狀態
 if compare.empty:
@@ -207,14 +246,8 @@ if st.button("🚀 導出出庫", type="primary"):
     if new_delivery.empty:
         st.warning("無法產生出庫資料，請確認：\n1. 已匯入平台訂單\n2. 對照表已建立商品對照")
     else:
-        # 與現有資料合併，去重
-        if not existing_delivery.empty:
-            combined = pd.concat([existing_delivery, new_delivery], ignore_index=True)
-            # 全欄位去重
-            combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
-        else:
-            combined = new_delivery
-        
+        # 每次重建，全欄位去重
+        combined = new_delivery.drop_duplicates(keep="last").reset_index(drop=True)
         save_delivery(combined)
         st.success(f"✅ 出庫資料已產生！共 {len(combined)} 筆")
         st.rerun()
@@ -236,4 +269,4 @@ else:
         return [""] * len(row)
     
     styled = delivery.style.apply(_highlight_platform, axis=1)
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width='stretch', hide_index=True)
