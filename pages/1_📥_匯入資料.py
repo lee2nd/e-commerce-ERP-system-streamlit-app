@@ -3,7 +3,8 @@ import pandas as pd
 from pathlib import Path
 
 from utils.data_manager import (
-    load_orders, append_orders, save_orders,
+    DATA_DIR,
+    append_orders,
     load_storage, save_storage,
     load_compare_table, save_compare_table,
     load_platform_orders, append_platform_orders,
@@ -19,6 +20,7 @@ st.markdown("""
     }
     [data-testid="stFileUploaderDropzoneInstructions"] {
         display: none;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -38,7 +40,7 @@ tab_storage, tab_order = st.tabs(["📥 匯入入庫資料", "📦 匯入平台�
 # ══════════════════════════════════════════════════════════════
 # Tab 1 – 匯入入庫資料
 # ══════════════════════════════════════════════════════════════
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "data_dev" / "入庫.xlsx"
+TEMPLATE_PATH = DATA_DIR / "入庫.xlsx"
 
 with tab_storage:
 
