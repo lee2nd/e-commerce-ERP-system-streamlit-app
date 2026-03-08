@@ -51,12 +51,12 @@
 # )
 # fig.update_layout(yaxis=dict(autorange="reversed"), height=max(400, top_n * 28))
 # fig.update_traces(texttemplate="$%{text:,.0f}", textposition="outside")
-# st.plotly_chart(fig, use_container_width=True)
+# st.plotly_chart(fig, width="stretch")
 
 # # 表格
 # st.dataframe(
 #     sales_rank[["排名", "商品名稱", "銷售金額", "銷售數量"]],
-#     use_container_width=True,
+#     width="stretch",
 #     hide_index=True,
 #     column_config={
 #         "銷售金額": st.column_config.NumberColumn(format="$%d"),
@@ -87,7 +87,7 @@
 #             text_auto=True, color="銷售數量",
 #             color_continuous_scale="Oranges",
 #         )
-#         st.plotly_chart(fig2, use_container_width=True)
-#         st.dataframe(spec_data, use_container_width=True, hide_index=True)
+#         st.plotly_chart(fig2, width="stretch")
+#         st.dataframe(spec_data, width="stretch", hide_index=True)
 #     else:
 #         st.info("此商品無規格資料")

@@ -85,7 +85,7 @@ s4.metric("淨利", f"${int(view['淨利'].sum()):,}")
 st.markdown("### 明細")
 st.dataframe(
     view.sort_values("日期", ascending=False),
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     column_config={
         "營業額": st.column_config.NumberColumn(format="$%d"),

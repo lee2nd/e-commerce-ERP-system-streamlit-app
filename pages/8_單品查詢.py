@@ -75,7 +75,7 @@
 #         textposition="outside",
 #     ))
 #     fig.update_layout(barmode="group", xaxis=dict(dtick=1), yaxis_title="NT$")
-#     st.plotly_chart(fig, use_container_width=True)
+#     st.plotly_chart(fig, width="stretch")
 
 # # ── 規格分布 ─────────────────────────────────────────────────
 # st.markdown("### 規格銷量分布")
@@ -89,9 +89,9 @@
 
 # if not spec.empty and len(spec) > 1:
 #     fig2 = px.pie(spec, values="銷售數量", names="規格", hole=0.3)
-#     st.plotly_chart(fig2, use_container_width=True)
+#     st.plotly_chart(fig2, width="stretch")
 
-# st.dataframe(spec, use_container_width=True, hide_index=True)
+# st.dataframe(spec, width="stretch", hide_index=True)
 
 # # ── 平台分布 ─────────────────────────────────────────────────
 # st.markdown("### 各平台銷量")
@@ -102,12 +102,12 @@
 #     .sort_values("銷售數量", ascending=False)
 #     .reset_index()
 # )
-# st.dataframe(plat, use_container_width=True, hide_index=True)
+# st.dataframe(plat, width="stretch", hide_index=True)
 
 # # ── 明細 ─────────────────────────────────────────────────────
 # with st.expander("📋 銷售明細"):
 #     st.dataframe(
 #         item_data[["日期", "規格", "貨號", "數量", "單價", "金額", "平台"]],
-#         use_container_width=True,
+#         width="stretch",
 #         hide_index=True,
 #     )

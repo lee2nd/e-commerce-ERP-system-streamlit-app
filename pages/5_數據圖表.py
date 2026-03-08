@@ -37,7 +37,7 @@
 #     barmode="group", text_auto=True,
 # )
 # fig1.update_layout(xaxis=dict(dtick=1))
-# st.plotly_chart(fig1, use_container_width=True)
+# st.plotly_chart(fig1, width="stretch")
 
 # # ── 平均月訂單量 ─────────────────────────────────────────────
 # months_with_data = plat_monthly.groupby("月份")["訂單數"].sum()
@@ -60,7 +60,7 @@
 # fig2.add_trace(go.Bar(name="營業額", x=monthly_fin["月份"], y=monthly_fin["營業額"]))
 # fig2.add_trace(go.Bar(name="淨利", x=monthly_fin["月份"], y=monthly_fin["淨利"]))
 # fig2.update_layout(barmode="group", xaxis=dict(dtick=1), yaxis_title="NT$")
-# st.plotly_chart(fig2, use_container_width=True)
+# st.plotly_chart(fig2, width="stretch")
 
 # # ══════════════════════════════════════════════════════════════
 # # 3. 平台營收佔比
@@ -69,7 +69,7 @@
 # plat_rev = normal.groupby("平台")["營業額"].sum().reset_index()
 # if not plat_rev.empty and plat_rev["營業額"].sum() > 0:
 #     fig3 = px.pie(plat_rev, values="營業額", names="平台", hole=0.4)
-#     st.plotly_chart(fig3, use_container_width=True)
+#     st.plotly_chart(fig3, width="stretch")
 # else:
 #     st.info("無營收資料")
 
@@ -81,4 +81,4 @@
 # if not daily_trend.empty:
 #     fig4 = px.line(daily_trend, x="日期", y="營業額", markers=True)
 #     fig4.update_layout(yaxis_title="NT$")
-#     st.plotly_chart(fig4, use_container_width=True)
+#     st.plotly_chart(fig4, width="stretch")

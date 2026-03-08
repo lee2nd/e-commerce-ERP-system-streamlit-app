@@ -46,7 +46,7 @@
 # # ── 表格 ─────────────────────────────────────────────────────
 # st.dataframe(
 #     view,
-#     use_container_width=True,
+#     width="stretch",
 #     hide_index=True,
 #     column_config={
 #         "進貨金額": st.column_config.NumberColumn(format="$%d"),

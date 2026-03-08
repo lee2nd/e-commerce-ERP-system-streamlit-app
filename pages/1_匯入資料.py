@@ -45,7 +45,7 @@ with tab_storage:
     st.subheader("目前入庫資料 (後台使用)")
     storage = load_storage()
     if not storage.empty:
-        st.dataframe(storage, use_container_width=True, hide_index=True)
+        st.dataframe(storage, width="stretch", hide_index=True)
     else:
         st.info("尚未有入庫資料")
             
@@ -75,7 +75,7 @@ with tab_storage:
             # 讀取上傳的檔案
             raw_df = read_file_flexible(stg_file)
             st.markdown("#### 預覽上傳的資料")
-            st.dataframe(raw_df, use_container_width=True, hide_index=True)
+            st.dataframe(raw_df, width="stretch", hide_index=True)
 
             if st.button("🚀 確認匯入入庫資料", type="primary"):
                 # 檢查必要欄位（入庫.xlsx 格式）
@@ -218,7 +218,7 @@ with tab_order:
                 save_compare_table(updated)
 
                 st.success(f"✅ 成功匯入 **{len(new)}** 筆訂單")
-                st.dataframe(raw_preview.head(30), use_container_width=True, hide_index=True)
+                st.dataframe(raw_preview.head(30), width="stretch", hide_index=True)
 
         except Exception as e:
             st.error(f"匯入失敗：{e}")
@@ -229,6 +229,6 @@ with tab_order:
         pdf = load_platform_orders(plat_file)
         st.markdown(f"**{plat_name}**（{len(pdf)} 筆）")
         if not pdf.empty:
-            st.dataframe(pdf, use_container_width=True, hide_index=True)
+            st.dataframe(pdf, width="stretch", hide_index=True)
         else:
             st.info(f"尚未匯入{plat_file}訂單")

@@ -24,7 +24,7 @@ if monthly.empty:
 # ── 表格 ─────────────────────────────────────────────────────
 st.dataframe(
     monthly,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     column_config={
         "月份": st.column_config.NumberColumn("月份", format="%d 月"),
@@ -52,7 +52,7 @@ fig1 = px.bar(
     labels={"金額": "NT$", "月份": "月份"},
 )
 fig1.update_layout(xaxis=dict(dtick=1))
-st.plotly_chart(fig1, use_container_width=True)
+st.plotly_chart(fig1, width="stretch")
 
 # 訂單數
 st.markdown("### 月度訂單數")
@@ -61,7 +61,7 @@ fig2 = px.bar(
     labels={"訂單數": "筆"},
 )
 fig2.update_layout(xaxis=dict(dtick=1))
-st.plotly_chart(fig2, use_container_width=True)
+st.plotly_chart(fig2, width="stretch")
 
 # 下載
 csv = monthly.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")

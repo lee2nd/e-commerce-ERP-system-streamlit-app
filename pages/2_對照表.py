@@ -76,10 +76,18 @@ if not compare.empty:
         "在「入庫品名」欄用下拉選單選擇對應的入庫商品，確認入庫品名都填寫完，按下方「✅ 確認並自動帶出貨號」會自動填入貨號與主貨號"
     )
     filter_opt = st.radio(
-        "", ["全部", "未匹配", "已匹配"],
-        horizontal=True, key="cmp_filter",
-        label_visibility="collapsed",
-    )
+            "篩選狀態", ["全部", "未匹配", "已匹配"], 
+            horizontal=True, key="cmp_filter",
+            label_visibility="collapsed",
+        )
+
+    # 在複製給 view 之前，強制將這些文字欄位轉為字串型態，避免 float 轉換錯誤
+    cols_to_str = ["入庫品名", "主貨號", "貨號", "平台商品名稱"]
+    for col in cols_to_str:
+        if col in compare.columns:
+            # fillna("") 把 NaN 換成空字串，astype(str) 強制轉換為字串
+            compare[col] = compare[col].fillna("").astype(str)
+                
     view = compare.copy()
     if filter_opt == "未匹配":
         view = view[(view["入庫品名"].isna()) | (view["入庫品名"].astype(str) == "")]
@@ -101,44 +109,52 @@ if not compare.empty:
 
         styled_view = view.style.apply(_highlight_platform, axis=1)
 
-        edited = st.data_editor(
-            styled_view,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                # disabled=True -> 讓該欄位無法編輯，使用者只能看不能改
-                "平台": st.column_config.TextColumn("平台", disabled=True, width="small"),
-                "平台商品名稱": st.column_config.TextColumn(
-                    "平台商品名稱", disabled=True, width="large",
-                ),
-                "入庫品名": st.column_config.SelectboxColumn(
-                    "入庫品名", options=stg_options, width="large",
-                ),
-                "主貨號": st.column_config.TextColumn("主貨號", disabled=True, width="medium"),
-                "貨號": st.column_config.TextColumn("貨號", disabled=True, width="medium"),
-            },
-            column_order=["平台", "平台商品名稱",  "入庫品名", "主貨號",  "貨號"],
-            key="compare_editor",
-        )
+        # 💡 解法 1：使用 st.form 包裝編輯器與按鈕，防止狀態中途遺失
+        with st.form("compare_editor_form"):
+            edited = st.data_editor(
+                styled_view,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "平台": st.column_config.TextColumn("平台", disabled=True, width="small"),
+                    "平台商品名稱": st.column_config.TextColumn(
+                        "平台商品名稱", disabled=True, width="large",
+                    ),
+                    "入庫品名": st.column_config.SelectboxColumn(
+                        "入庫品名", options=stg_options, width="large",
+                    ),
+                    "主貨號": st.column_config.TextColumn("主貨號", disabled=True, width="medium"),
+                    "貨號": st.column_config.TextColumn("貨號", disabled=True, width="medium"),
+                },
+                column_order=["平台", "平台商品名稱", "入庫品名", "主貨號", "貨號"],
+                key="compare_editor",
+            )
 
-        # if st.button("✅ 確認並自動帶出貨號", type="primary"):
-        #     # 根據選擇的入庫品名自動填入貨號、主貨號
-        #     for idx in edited.index:
-        #         stg_name = str(edited.at[idx, "入庫品名"]).strip()
-        #         if stg_name and stg_name in stg_mapping:
-        #             edited.at[idx, "貨號"] = stg_mapping[stg_name]["貨號"]
-        #             edited.at[idx, "主貨號"] = stg_mapping[stg_name]["主貨號"]
+            # 使用 form_submit_button 替代原有的 button
+            submitted = st.form_submit_button("✅ 儲存入庫品名 → 自動帶出貨號", type="primary")
 
-        #     # 合併回完整對照表
-        #     view_keys = set(view["平台商品名稱"].astype(str) + "||" + view["平台"].astype(str))
-        #     unchanged = compare[
-        #         ~(compare["平台商品名稱"].astype(str) + "||" + compare["平台"].astype(str)).isin(view_keys)
-        #     ]
-        #     saved = pd.concat([unchanged, edited], ignore_index=True)
-        #     saved = saved.drop_duplicates(subset=["平台商品名稱", "平台"])
-        #     save_compare_table(saved)
-        #     st.success("已儲存！貨號已自動帶出")
-        #     st.rerun()
+            if submitted:
+                # 💡 解法 2：直接依據 Index 更新 compare 表，避免使用 concat 導致欄位遺失
+                compare.loc[edited.index, "入庫品名"] = edited["入庫品名"]
+
+                # 根據已儲存的入庫品名自動填入貨號、主貨號
+                for idx in edited.index:
+                    raw_val = compare.at[idx, "入庫品名"]
+                    stg_name = "" if pd.isna(raw_val) else str(raw_val).strip()
+                    
+                    if stg_name and stg_name in stg_mapping:
+                        compare.at[idx, "貨號"] = stg_mapping[stg_name]["貨號"]
+                        compare.at[idx, "主貨號"] = stg_mapping[stg_name]["主貨號"]
+                    else:
+                        # (可選) 如果使用者清空了入庫品名，順便把貨號也清空
+                        compare.at[idx, "貨號"] = ""
+                        compare.at[idx, "主貨號"] = ""
+
+                # 儲存結果並重新整理畫面
+                # 記得把這行的註解拿掉！
+                save_compare_table(compare)
+                st.success("已儲存！貨號已自動帶出")
+                st.rerun()
 
 else:
     st.info("對照表為空，請先至首頁「匯入平台訂單」上傳訂單資料")
