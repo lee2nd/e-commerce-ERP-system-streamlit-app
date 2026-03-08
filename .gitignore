@@ -1,5 +1,6 @@
 # 地端開發資料（不上傳 git）
 data_dev/
+data/
 
 # Python
 __pycache__/

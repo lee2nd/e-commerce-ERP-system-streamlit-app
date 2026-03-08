@@ -62,8 +62,13 @@ def _filter_ruten(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _filter_easystore(df: pd.DataFrame) -> pd.DataFrame:
-    """官網：目前不做特殊過濾"""
-    return df.copy() if not df.empty else df
+    """官網：Remark 欄位為「取消訂購」視為退貨，跳過不出庫"""
+    if df.empty:
+        return df
+    if "Remark" not in df.columns:
+        return df.copy()
+    mask = df["Remark"].fillna("").astype(str).str.strip() != "取消訂購"
+    return df[mask].copy()
 
 
 def _build_platform_key(row: pd.Series, platform: str) -> str:
@@ -188,23 +193,11 @@ def generate_delivery() -> pd.DataFrame:
 # 統計現有出庫資料
 existing_delivery = load_delivery()
 if not existing_delivery.empty:
-    # c1, c2, c3, c4, c5 = st.columns(5)
-    # c1.metric("總筆數", len(existing_delivery))
-    # c2.metric("總金額", f"${existing_delivery['金額'].sum():,.0f}")
-    # c3.metric("蝦皮", len(existing_delivery[existing_delivery["平台"] == "蝦皮"]))
-    # c4.metric("露天", len(existing_delivery[existing_delivery["平台"] == "露天"]))
-    # c5.metric("官網", len(existing_delivery[existing_delivery["平台"] == "官網"]))
 
-    # 定義顏色對照表
     colors = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
 
-    # 建立欄位
     c1, c2, c3, c4, c5 = st.columns(5)
-
-    # 1. 總筆數 (預設樣式)
     c1.metric("總筆數", len(existing_delivery))
-
-    # 2. 總金額 (預設樣式)
     c2.metric("總金額", f"${existing_delivery['金額'].sum():,.0f}")
 
     # 定義一個共用的顯示函數，方便重複使用
