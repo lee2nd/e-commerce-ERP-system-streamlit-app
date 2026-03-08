@@ -64,7 +64,7 @@ styled = view.style.apply(_highlight_cost_mismatch, axis=1).format({
     "平均成本(入庫)":     "${:.1f}",
 })
 
-st.dataframe(styled, use_container_width=True, hide_index=True)
+st.dataframe(styled, width='stretch', hide_index=True)
 
 if cost_mismatch:
     st.caption("⚠️ 黃底列表示「平均成本(庫存明細)」與「平均成本(入庫)」數字不同，請確認入庫資料是否有誤")
