@@ -114,9 +114,18 @@ def load_daily_report() -> pd.DataFrame:
 def save_daily_report(df: pd.DataFrame):
     _save(df, "daily_report")
 
-# ── 出庫 ────────────────────────────────────────────────────
+# ── 出庫（讀寫 出庫.xlsx）────────────────────────────────────
 def load_delivery() -> pd.DataFrame:
-    return _load("delivery")
+    """從 data/出庫.xlsx 讀取出庫資料。"""
+    path = DATA_DIR / "出庫.xlsx"
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            return pd.read_excel(path, engine="openpyxl")
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
 
 def save_delivery(df: pd.DataFrame):
-    _save(df, "delivery")
+    """將出庫資料寫入 data/出庫.xlsx。"""
+    path = DATA_DIR / "出庫.xlsx"
+    df.to_excel(path, index=False, engine="openpyxl")
