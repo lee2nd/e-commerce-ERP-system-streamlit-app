@@ -1,10 +1,16 @@
 """
 資料持久化層 — 讀寫 CSV / JSON，統一管理 data/ 目錄。
 """
+import os
 import pandas as pd
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data_dev"
+# 地端用 data_dev/，Streamlit Cloud 用 data/
+_ROOT = Path(__file__).resolve().parent.parent
+if os.environ.get("STREAMLIT_CLOUD") or not (_ROOT / "data_dev").exists():
+    DATA_DIR = _ROOT / "data"
+else:
+    DATA_DIR = _ROOT / "data_dev"
 DATA_DIR.mkdir(exist_ok=True)
 
 # ── 通用讀寫 ────────────────────────────────────────────────
