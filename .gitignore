@@ -1,0 +1,34 @@
+# 地端開發資料（不上傳 git）
+data_dev/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 虛擬環境
+.venv/
+venv/
+env/
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# 暫存 Excel 鎖定檔
+~$*.xlsx
+~$*.xlsm
