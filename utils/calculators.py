@@ -9,7 +9,7 @@ import pandas as pd
 # ══════════════════════════════════════════════════════════════
 def auto_match_compare_table(
     orders_df: pd.DataFrame,
-    storage_df: pd.DataFrame = None,
+    storage_df: pd.DataFrame | None = None,
     existing_compare_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if orders_df.empty:
@@ -171,7 +171,6 @@ def generate_daily_report(
             for _, r in g.iterrows()
             if pd.notna(r["_sku"]) and str(r["_sku"]) not in ("", "nan")
         ),
-        include_groups=False,
     ).reset_index(name="貨號明細")
     agg = agg.merge(sku_detail, on="訂單編號", how="left")
 
@@ -180,7 +179,6 @@ def generate_daily_report(
         lambda g: ",".join(sorted({
             n for n in g["_storage_name"] if n and n != "[]"
         })),
-        include_groups=False,
     ).reset_index(name="入庫名稱")
     agg = agg.merge(name_detail, on="訂單編號", how="left")
 
@@ -310,3 +308,67 @@ def generate_inventory(
     result["平均成本"] = result["平均成本"].round(1)
 
     return result.reset_index(drop=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# 庫存明細（對應 VBA InventoryDetails）
+# ══════════════════════════════════════════════════════════════
+def generate_inventory_details(
+    storage_df: pd.DataFrame,
+    delivery_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """依入庫/出庫 xlsx 欄位產生庫存明細，對應 VBA InventoryDetails.vba 邏輯。"""
+    if storage_df.empty:
+        return pd.DataFrame()
+
+    # 相容 load_storage() 轉換後的欄位名稱
+    name_col   = "商品名稱" if "商品名稱" in storage_df.columns else "名稱"
+    qty_col    = "數量"     if "數量"     in storage_df.columns else "入庫數量"
+    amount_col = "總金額"   if "總金額"   in storage_df.columns else "金額"
+    cost_col   = "單位成本" if "單位成本" in storage_df.columns else "單價"
+
+    # 以貨號為 key 彙總入庫
+    stg = (
+        storage_df
+        .groupby(["主貨號", "貨號", name_col, "規格"], dropna=False)
+        .agg(
+            進貨數量=(qty_col,    "sum"),
+            進貨合計=(amount_col, "sum"),
+            **{"平均成本(入庫)": (cost_col, "mean")},
+        )
+        .reset_index()
+        .rename(columns={name_col: "名稱"})
+    )
+
+    # 以貨號為 key 彙總出庫
+    if not delivery_df.empty and "貨號" in delivery_df.columns:
+        qty_d = "出庫數量" if "出庫數量" in delivery_df.columns else "數量"
+        dly = (
+            delivery_df
+            .groupby("貨號", dropna=False)
+            .agg(
+                銷售數量=(qty_d,  "sum"),
+                銷售合計=("金額", "sum"),
+            )
+            .reset_index()
+        )
+        result = stg.merge(dly, on="貨號", how="left")
+    else:
+        result = stg.copy()
+        result["銷售數量"] = 0
+        result["銷售合計"] = 0.0
+
+    result["銷售數量"] = result["銷售數量"].fillna(0).astype(int)
+    result["銷售合計"] = result["銷售合計"].fillna(0.0)
+    result["現有庫存"] = result["進貨數量"] - result["銷售數量"]
+    result["平均成本(庫存明細)"] = (result["進貨合計"] / result["進貨數量"]).round(1)
+    result["平均成本(入庫)"] = result["平均成本(入庫)"].round(1)
+
+    col_order = [
+        "主貨號", "貨號", "名稱", "規格",
+        "進貨數量", "進貨合計",
+        "銷售數量", "銷售合計",
+        "現有庫存",
+        "平均成本(庫存明細)", "平均成本(入庫)",
+    ]
+    return result[col_order].reset_index(drop=True)

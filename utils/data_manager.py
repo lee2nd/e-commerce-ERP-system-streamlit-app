@@ -129,3 +129,19 @@ def save_delivery(df: pd.DataFrame):
     """將出庫資料寫入 data/出庫.xlsx。"""
     path = DATA_DIR / "出庫.xlsx"
     df.to_excel(path, index=False, engine="openpyxl")
+
+# ── 庫存明細（讀寫 庫存明細.xlsx）────────────────────────────────
+def load_inventory_details() -> pd.DataFrame:
+    """從 data/庫存明細.xlsx 讀取庫存明細。"""
+    path = DATA_DIR / "庫存明細.xlsx"
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            return pd.read_excel(path, engine="openpyxl")
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+def save_inventory_details(df: pd.DataFrame):
+    """將庫存明細寫入 data/庫存明細.xlsx。"""
+    path = DATA_DIR / "庫存明細.xlsx"
+    df.to_excel(path, index=False, engine="openpyxl")

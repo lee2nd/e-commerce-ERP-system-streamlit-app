@@ -1,60 +1,71 @@
-# """庫存明細（需求 4：包含主貨號 / 貨號）"""
-# import streamlit as st
-# import pandas as pd
+import streamlit as st
+from utils.data_manager import (
+    load_storage, load_delivery,
+    load_inventory_details, save_inventory_details,
+)
+from utils.calculators import generate_inventory_details
 
-# st.set_page_config(page_title="庫存明細", page_icon="🔎", layout="wide")
+st.set_page_config(page_title="庫存明細", page_icon="🔎", layout="wide")
+st.title("🔎 庫存明細")
 
-# from utils.data_manager import load_storage, load_delivery
-# from utils.calculators import generate_inventory
+if st.button("🔄 更新庫存明細", type="primary"):
+    storage  = load_storage()
+    delivery = load_delivery()
+    if storage.empty:
+        st.warning("請先至「匯入資料」頁面新增入庫資料")
+    else:
+        result = generate_inventory_details(storage, delivery)
+        save_inventory_details(result)
+        st.success(f"✅ 庫存明細已更新！共 {len(result)} 筆")
+        st.rerun()
 
-# st.title("🔎 庫存明細")
+inventory = load_inventory_details()
 
-# storage  = load_storage()
-# delivery = load_delivery()
+if inventory.empty:
+    st.info("尚無庫存明細，請點擊上方「🔄 更新庫存明細」按鈕產生")
+    st.stop()
 
-# if storage.empty:
-#     st.info("請先至「匯入資料」頁面新增入庫資料")
-#     st.stop()
+# 摘要
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("商品種類", f"{len(inventory)}")
+c2.metric("庫存充足", int((inventory["現有庫存"] > 0).sum()))
+c3.metric("庫存不足（≤0）", int((inventory["現有庫存"] <= 0).sum()))
+cost_mismatch = int(
+    (inventory["平均成本(庫存明細)"] != inventory["平均成本(入庫)"]).sum()
+)
+c4.metric("成本不一致 ⚠️", cost_mismatch)
 
-# inventory = generate_inventory(storage, delivery)
+# 篩選
+col_s, col_f = st.columns([3, 1])
+search = col_s.text_input("🔍 搜尋（主貨號 / 貨號 / 名稱）")
+low_stock = col_f.checkbox("僅顯示庫存不足（≤0）")
 
-# if inventory.empty:
-#     st.warning("無法產生庫存明細（入庫資料可能缺少必要欄位）")
-#     st.stop()
+view = inventory.copy()
+if search:
+    mask = (
+        view["名稱"].astype(str).str.contains(search, case=False, na=False)
+        | view["貨號"].astype(str).str.contains(search, case=False, na=False)
+        | view["主貨號"].astype(str).str.contains(search, case=False, na=False)
+    )
+    view = view[mask]
+if low_stock:
+    view = view[view["現有庫存"] <= 0]
 
-# # ── 摘要 ─────────────────────────────────────────────────────
-# c1, c2, c3 = st.columns(3)
-# c1.metric("商品種類", f"{len(inventory)} 項")
-# c2.metric("庫存充足", int((inventory["現有庫存"] > 0).sum()))
-# c3.metric("庫存不足（≤0）", int((inventory["現有庫存"] <= 0).sum()))
+# 表格（成本不一致行標黃）
+def _highlight_cost_mismatch(row):
+    if row["平均成本(庫存明細)"] != row["平均成本(入庫)"]:
+        return ["background-color: #fff3cd"] * len(row)
+    return [""] * len(row)
 
-# # ── 篩選 ─────────────────────────────────────────────────────
-# search = st.text_input("🔍 搜尋（商品名稱 / 貨號 / 主貨號）")
-# view = inventory.copy()
-# if search:
-#     mask = (
-#         view["商品名稱"].str.contains(search, case=False, na=False)
-#         | view["貨號"].str.contains(search, case=False, na=False)
-#         | view["主貨號"].str.contains(search, case=False, na=False)
-#     )
-#     view = view[mask]
+styled = view.style.apply(_highlight_cost_mismatch, axis=1).format({
+    "進貨合計": "${:,.0f}",
+    "銷售合計": "${:,.0f}",
+    "平均成本(庫存明細)": "${:.1f}",
+    "平均成本(入庫)":     "${:.1f}",
+})
 
-# low_stock = st.checkbox("僅顯示庫存不足（≤0）")
-# if low_stock:
-#     view = view[view["現有庫存"] <= 0]
+st.dataframe(styled, use_container_width=True, hide_index=True)
 
-# # ── 表格 ─────────────────────────────────────────────────────
-# st.dataframe(
-#     view,
-#     width="stretch",
-#     hide_index=True,
-#     column_config={
-#         "進貨金額": st.column_config.NumberColumn(format="$%d"),
-#         "銷售金額": st.column_config.NumberColumn(format="$%d"),
-#         "平均成本": st.column_config.NumberColumn(format="$%.1f"),
-#     },
-# )
+if cost_mismatch:
+    st.caption("⚠️ 黃底列表示「平均成本(庫存明細)」與「平均成本(入庫)」數字不同，請確認入庫資料是否有誤")
 
-# # 下載
-# csv = view.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-# st.download_button("📥 下載庫存明細 CSV", csv, "inventory.csv", "text/csv")
