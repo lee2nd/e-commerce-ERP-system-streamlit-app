@@ -147,6 +147,11 @@ def _save_csv(df: pd.DataFrame, name: str):
 def _load_excel(filename: str) -> pd.DataFrame:
     """讀取 Excel：本地直接讀檔，雲端透過 GitHub API。"""
     if _is_cloud():
+        # 寫入後的快取：確保 rerun 後能立即讀到最新資料（避免 API 延遲）
+        import streamlit as st
+        cache_key = f"_df_cache_{filename}"
+        if cache_key in st.session_state:
+            return st.session_state.pop(cache_key)
         try:
             return _gh_read_excel(filename)
         except Exception:
@@ -165,6 +170,9 @@ def _save_excel(df: pd.DataFrame, filename: str, commit_msg: str):
     """寫入 Excel：本地直接寫檔，雲端透過 GitHub API commit。"""
     if _is_cloud():
         _gh_write_excel(df, filename, commit_msg)
+        # 寫入後暫存到 session_state，讓 rerun 後讀取不受 API 延遲影響
+        import streamlit as st
+        st.session_state[f"_df_cache_{filename}"] = df.copy()
     else:
         path = DATA_DIR / filename
         df.to_excel(path, index=False, engine="openpyxl")

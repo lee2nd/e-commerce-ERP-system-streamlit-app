@@ -44,6 +44,9 @@ TEMPLATE_PATH = DATA_DIR / "入庫.xlsx"
 
 with tab_storage:
 
+    if st.session_state.pop("stg_upload_success", None) is not None:
+        st.success("✅ 成功匯入入庫資料")
+
     st.subheader("目前入庫資料 (後台使用)")
     storage = load_storage()
     if not storage.empty:
@@ -116,8 +119,8 @@ with tab_storage:
 
                     # 整份取代（使用者應在 Excel 中保留舊資料 + 新增資料後上傳）
                     save_storage(new_stg)
-
-                    st.success(f"✅ 成功匯入 **{len(new_stg)}** 筆入庫資料，已儲存至 data/入庫.xlsx")
+                    st.session_state["stg_upload_success"] = len(new_stg)
+                    st.rerun()
         except Exception as e:
             st.error(f"匯入失敗：{e}")
 
@@ -155,6 +158,9 @@ with tab_storage:
 # Tab 2 – 匯入平台訂單
 # ══════════════════════════════════════════════════════════════
 with tab_order:
+    if st.session_state.pop("order_upload_success", None) is not None:
+        st.success("✅ 訂單匯入成功")
+
     platform = st.selectbox("選擇平台", ["蝦皮", "露天", "官網 (EasyStore)", "MOMO"], index=0)
     uploaded = st.file_uploader(
         "上傳訂單檔案",
@@ -218,9 +224,8 @@ with tab_order:
                 compare = load_compare_table()
                 updated = auto_match_compare_table(new, stg, compare)
                 save_compare_table(updated)
-
-                st.success(f"✅ 成功匯入 **{len(new)}** 筆訂單")
-                st.dataframe(raw_preview.head(30), width="stretch", hide_index=True)
+                st.session_state["order_upload_success"] = len(new)
+                st.rerun()
 
         except Exception as e:
             st.error(f"匯入失敗：{e}")
