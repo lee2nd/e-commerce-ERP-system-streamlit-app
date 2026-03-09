@@ -58,19 +58,33 @@ def _gh_headers(token: str) -> dict:
 
 def _gh_read_excel(filename: str) -> pd.DataFrame:
     """
-    從 GitHub raw URL 下載 Excel 檔並回傳 DataFrame。
-    Public repo 不需要 token，但有 token 可避免 rate limit。
+    從 GitHub Contents API 下載 Excel 檔並回傳 DataFrame。
+    使用 Contents API 而非 raw URL，以確保讀取最新版本（避免快取延遲）。
     """
     cfg = _gh_config()
-    url = (
-        f"https://raw.githubusercontent.com/"
-        f"{cfg['owner']}/{cfg['repo']}/{cfg['branch']}/data/{filename}"
+    headers = _gh_headers(cfg["token"])
+    api_url = (
+        f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}"
+        f"/contents/data/{filename}"
     )
-    resp = requests.get(url, headers=_gh_headers(cfg["token"]), timeout=15)
+    resp = requests.get(
+        api_url, headers=headers,
+        params={"ref": cfg["branch"]},
+        timeout=15,
+    )
     if resp.status_code == 404:
         return pd.DataFrame()
     resp.raise_for_status()
-    return pd.read_excel(io.BytesIO(resp.content), engine="openpyxl")
+    data = resp.json()
+    # 檔案 < 1 MB：Contents API 直接回傳 base64 content
+    if data.get("content"):
+        content_bytes = base64.b64decode(data["content"])
+    else:
+        # 檔案較大時，改用 download_url 下載
+        dl_resp = requests.get(data["download_url"], headers=headers, timeout=15)
+        dl_resp.raise_for_status()
+        content_bytes = dl_resp.content
+    return pd.read_excel(io.BytesIO(content_bytes), engine="openpyxl")
 
 
 def _gh_write_excel(df: pd.DataFrame, filename: str, commit_msg: str):
