@@ -2,6 +2,7 @@ import streamlit as st
 from utils.data_manager import (
     load_storage, load_delivery,
     load_inventory_details, save_inventory_details,
+    clear_inventory_details,
 )
 from utils.calculators import generate_inventory_details
 
@@ -68,4 +69,21 @@ st.dataframe(styled, width='stretch', hide_index=True)
 
 if cost_mismatch:
     st.caption("⚠️ 黃底列表示「平均成本(庫存明細)」與「平均成本(入庫)」數字不同，請確認入庫資料是否有誤")
+
+# ── 清0 庫存明細 ───────────────────────────────────────────
+st.markdown("---")
+if st.button("🗑️ 清除庫存明細", key="clear_inv_btn"):
+    st.session_state["confirm_clear_inv"] = True
+if st.session_state.get("confirm_clear_inv"):
+    st.warning("⚠️ 確定要清除所有庫存明細資料嗎？此操作無法復原！")
+    _c1, _c2 = st.columns(2)
+    if _c1.button("✅ 確認清除", key="confirm_clear_inv_yes", type="primary"):
+        with st.spinner("清除中…"):
+            clear_inventory_details()
+        st.session_state.pop("confirm_clear_inv", None)
+        st.success("✅ 庫存明細已清除")
+        st.rerun()
+    if _c2.button("❌ 取消", key="confirm_clear_inv_no"):
+        st.session_state.pop("confirm_clear_inv", None)
+        st.rerun()
 

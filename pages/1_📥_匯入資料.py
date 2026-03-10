@@ -8,6 +8,7 @@ from utils.data_manager import (
     load_storage, save_storage,
     load_compare_table, save_compare_table,
     load_platform_orders, append_platform_orders,
+    clear_storage, clear_platform_orders,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
 from utils.calculators import auto_match_compare_table
@@ -154,6 +155,23 @@ with tab_storage:
     if st.session_state.pop("stg_success", False):
         st.success("新增成功")            
 
+    # ── 清0 入庫資料 ──────────────────────────────────────────
+    st.markdown("---")
+    if st.button("🗑️ 清除入庫資料", key="clear_stg_btn"):
+        st.session_state["confirm_clear_stg"] = True
+    if st.session_state.get("confirm_clear_stg"):
+        st.warning("⚠️ 確定要清除所有入庫資料嗎？此操作無法復原！")
+        _c1, _c2 = st.columns(2)
+        if _c1.button("✅ 確認清除", key="confirm_clear_stg_yes", type="primary"):
+            with st.spinner("清除中…"):
+                clear_storage()
+            st.session_state.pop("confirm_clear_stg", None)
+            st.success("✅ 入庫資料已清除")
+            st.rerun()
+        if _c2.button("❌ 取消", key="confirm_clear_stg_no"):
+            st.session_state.pop("confirm_clear_stg", None)
+            st.rerun()
+            
 # ══════════════════════════════════════════════════════════════
 # Tab 2 – 匯入平台訂單
 # ══════════════════════════════════════════════════════════════
@@ -239,3 +257,21 @@ with tab_order:
             st.dataframe(pdf, width="stretch", hide_index=True)
         else:
             st.info(f"尚未匯入{plat_file}訂單")
+
+    # ── 清0 平台訂單 ───────────────────────────────────────────
+    st.markdown("---")
+    if st.button("🗑️ 清除所有平台訂單", key="clear_orders_btn"):
+        st.session_state["confirm_clear_orders"] = True
+    if st.session_state.get("confirm_clear_orders"):
+        st.warning("⚠️ 確定要清除所有平台訂單（蝦皮、露天、官網）嗎？此操作無法復原！")
+        _c1, _c2 = st.columns(2)
+        if _c1.button("✅ 確認清除", key="confirm_clear_orders_yes", type="primary"):
+            with st.spinner("清除中…"):
+                for _plat in ["蝦皮", "露天", "官網"]:
+                    clear_platform_orders(_plat)
+            st.session_state.pop("confirm_clear_orders", None)
+            st.success("✅ 所有平台訂單已清除")
+            st.rerun()
+        if _c2.button("❌ 取消", key="confirm_clear_orders_no"):
+            st.session_state.pop("confirm_clear_orders", None)
+            st.rerun()

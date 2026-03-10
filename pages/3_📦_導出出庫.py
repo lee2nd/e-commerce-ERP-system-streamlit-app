@@ -6,6 +6,7 @@ from utils.data_manager import (
     load_storage,
     load_delivery,
     save_delivery,
+    clear_delivery,
 )
 
 st.set_page_config(page_title="導出出庫", page_icon="📦", layout="wide")
@@ -263,3 +264,20 @@ else:
     
     styled = delivery.style.apply(_highlight_platform, axis=1)
     st.dataframe(styled, width='stretch', hide_index=True)
+
+# ── 清0 出庫資料 ───────────────────────────────────────────
+st.markdown("---")
+if st.button("🗑️ 清除出庫資料", key="clear_dlv_btn"):
+    st.session_state["confirm_clear_dlv"] = True
+if st.session_state.get("confirm_clear_dlv"):
+    st.warning("⚠️ 確定要清除所有出庫資料嗎？此操作無法復原！")
+    _c1, _c2 = st.columns(2)
+    if _c1.button("✅ 確認清除", key="confirm_clear_dlv_yes", type="primary"):
+        with st.spinner("清除中…"):
+            clear_delivery()
+        st.session_state.pop("confirm_clear_dlv", None)
+        st.success("✅ 出庫資料已清除")
+        st.rerun()
+    if _c2.button("❌ 取消", key="confirm_clear_dlv_no"):
+        st.session_state.pop("confirm_clear_dlv", None)
+        st.rerun()

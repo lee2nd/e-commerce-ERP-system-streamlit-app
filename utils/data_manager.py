@@ -295,3 +295,52 @@ def load_inventory_details() -> pd.DataFrame:
 
 def save_inventory_details(df: pd.DataFrame):
     _save_excel(df, "庫存明細.xlsx", "chore: update 庫存明細.xlsx")
+
+
+# ══════════════════════════════════════════════════════════════
+# 資料清0（保留欄位結構，清除所有資料列）
+# ══════════════════════════════════════════════════════════════
+
+def clear_storage():
+    """清空入庫資料，保留欄位結構。"""
+    cols = ["主貨號", "貨號", "名稱", "規格", "入庫數量", "單價", "金額", "入庫日期"]
+    existing = _load_excel("入庫.xlsx")
+    if not existing.empty:
+        cols = list(existing.columns)
+    _save_excel(pd.DataFrame(columns=cols), "入庫.xlsx", "chore: clear 入庫.xlsx")
+
+
+def clear_platform_orders(platform_name: str):
+    """清空指定平台訂單，保留欄位結構。"""
+    fname = f"{platform_name}.xlsx"
+    existing = _load_excel(fname)
+    cols = list(existing.columns) if not existing.empty else []
+    _save_excel(pd.DataFrame(columns=cols), fname, f"chore: clear {fname}")
+
+
+def clear_compare_table():
+    """清空對照表，保留欄位結構。"""
+    cols = ["平台商品名稱", "平台", "入庫品名", "貨號", "主貨號"]
+    existing = _load_excel("對照表.xlsx")
+    if not existing.empty:
+        cols = list(existing.columns)
+    _save_excel(pd.DataFrame(columns=cols), "對照表.xlsx", "chore: clear 對照表.xlsx")
+
+
+def clear_delivery():
+    """清空出庫資料，保留欄位結構。"""
+    cols = ["主貨號", "貨號", "名稱", "規格", "出庫數量", "單價", "金額", "出庫日期", "平台"]
+    existing = _load_excel("出庫.xlsx")
+    if not existing.empty:
+        cols = list(existing.columns)
+    _save_excel(pd.DataFrame(columns=cols), "出庫.xlsx", "chore: clear 出庫.xlsx")
+
+
+def clear_inventory_details():
+    """清空庫存明細，保留欄位結構。"""
+    cols = ["主貨號", "貨號", "名稱", "規格", "進貨數量", "進貨合計",
+            "銷售數量", "銷售合計", "現有庫存", "平均成本(庫存明細)", "平均成本(入庫)"]
+    existing = _load_excel("庫存明細.xlsx")
+    if not existing.empty:
+        cols = list(existing.columns)
+    _save_excel(pd.DataFrame(columns=cols), "庫存明細.xlsx", "chore: clear 庫存明細.xlsx")

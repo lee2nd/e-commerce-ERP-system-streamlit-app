@@ -5,6 +5,7 @@ from utils.data_manager import (
     load_compare_table, save_compare_table,
     load_storage,
     load_platform_orders,
+    clear_compare_table,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore
 from utils.calculators import auto_match_compare_table
@@ -158,3 +159,20 @@ if not compare.empty:
 
 else:
     st.info("對照表為空，請先至首頁「匯入平台訂單」上傳訂單資料")
+
+# ── 清0 對照表 ───────────────────────────────────────────
+st.markdown("---")
+if st.button("🗑️ 清除對照表", key="clear_cmp_btn"):
+    st.session_state["confirm_clear_cmp"] = True
+if st.session_state.get("confirm_clear_cmp"):
+    st.warning("⚠️ 確定要清除對照表所有資料嗎？此操作無法復原！")
+    _c1, _c2 = st.columns(2)
+    if _c1.button("✅ 確認清除", key="confirm_clear_cmp_yes", type="primary"):
+        with st.spinner("清除中…"):
+            clear_compare_table()
+        st.session_state.pop("confirm_clear_cmp", None)
+        st.success("✅ 對照表已清除")
+        st.rerun()
+    if _c2.button("❌ 取消", key="confirm_clear_cmp_no"):
+        st.session_state.pop("confirm_clear_cmp", None)
+        st.rerun()
