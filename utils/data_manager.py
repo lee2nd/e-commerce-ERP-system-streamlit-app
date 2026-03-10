@@ -339,7 +339,7 @@ def clear_delivery():
 def clear_inventory_details():
     """清空庫存明細，保留欄位結構。"""
     cols = ["主貨號", "貨號", "名稱", "規格", "進貨數量", "進貨合計",
-            "銷售數量", "銷售合計", "現有庫存", "平均成本(庫存明細)", "平均成本(入庫)"]
+            "銷售數量", "銷售合計", "現有庫存", "平均成本"]
     existing = _load_excel("庫存明細.xlsx")
     if not existing.empty:
         cols = list(existing.columns)

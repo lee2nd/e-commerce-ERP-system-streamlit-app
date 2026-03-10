@@ -334,7 +334,7 @@ def generate_inventory_details(
         .agg(
             進貨數量=(qty_col,    "sum"),
             進貨合計=(amount_col, "sum"),
-            **{"平均成本(入庫)": (cost_col, "mean")},
+            **{"平均成本": (cost_col, "mean")},
         )
         .reset_index()
         .rename(columns={name_col: "名稱"})
@@ -361,14 +361,13 @@ def generate_inventory_details(
     result["銷售數量"] = result["銷售數量"].fillna(0).astype(int)
     result["銷售合計"] = result["銷售合計"].fillna(0.0)
     result["現有庫存"] = result["進貨數量"] - result["銷售數量"]
-    result["平均成本(庫存明細)"] = (result["進貨合計"] / result["進貨數量"]).round(1)
-    result["平均成本(入庫)"] = result["平均成本(入庫)"].round(1)
+    result["平均成本"] = (result["進貨合計"] / result["進貨數量"]).round(1)
 
     col_order = [
         "主貨號", "貨號", "名稱", "規格",
         "進貨數量", "進貨合計",
         "銷售數量", "銷售合計",
         "現有庫存",
-        "平均成本(庫存明細)", "平均成本(入庫)",
+        "平均成本",
     ]
     return result[col_order].reset_index(drop=True)

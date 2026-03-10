@@ -114,7 +114,8 @@ if not compare.empty:
         with st.form("compare_editor_form"):
             edited = st.data_editor(
                 styled_view,
-                width="stretch",
+                # width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "平台": st.column_config.TextColumn("平台", disabled=True, width="small"),
@@ -122,10 +123,10 @@ if not compare.empty:
                         "平台商品名稱", disabled=True, width="large",
                     ),
                     "入庫品名": st.column_config.SelectboxColumn(
-                        "入庫品名", options=stg_options, width="large",
+                        "入庫品名", options=stg_options, width="medium",
                     ),
-                    "主貨號": st.column_config.TextColumn("主貨號", disabled=True, width="medium"),
-                    "貨號": st.column_config.TextColumn("貨號", disabled=True, width="medium"),
+                    "主貨號": st.column_config.TextColumn("主貨號", disabled=True, width="small"),
+                    "貨號": st.column_config.TextColumn("貨號", disabled=True, width="small"),
                 },
                 column_order=["平台", "平台商品名稱", "入庫品名", "主貨號", "貨號"],
                 key="compare_editor",

@@ -27,14 +27,10 @@ if inventory.empty:
     st.stop()
 
 # 摘要
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3 = st.columns(3)
 c1.metric("商品種類", f"{len(inventory)}")
 c2.metric("庫存充足", int((inventory["現有庫存"] > 0).sum()))
 c3.metric("庫存不足（≤0）", int((inventory["現有庫存"] <= 0).sum()))
-cost_mismatch = int(
-    (inventory["平均成本(庫存明細)"] != inventory["平均成本(入庫)"]).sum()
-)
-c4.metric("成本不一致 ⚠️", cost_mismatch)
 
 # 篩選
 col_s, col_f = st.columns([3, 1])
@@ -52,23 +48,8 @@ if search:
 if low_stock:
     view = view[view["現有庫存"] <= 0]
 
-# 表格（成本不一致行標黃）
-def _highlight_cost_mismatch(row):
-    if row["平均成本(庫存明細)"] != row["平均成本(入庫)"]:
-        return ["background-color: #fff3cd"] * len(row)
-    return [""] * len(row)
+st.dataframe(view, width='stretch', hide_index=True)
 
-styled = view.style.apply(_highlight_cost_mismatch, axis=1).format({
-    "進貨合計": "${:,.0f}",
-    "銷售合計": "${:,.0f}",
-    "平均成本(庫存明細)": "${:.1f}",
-    "平均成本(入庫)":     "${:.1f}",
-})
-
-st.dataframe(styled, width='stretch', hide_index=True)
-
-if cost_mismatch:
-    st.caption("⚠️ 黃底列表示「平均成本(庫存明細)」與「平均成本(入庫)」數字不同，請確認入庫資料是否有誤")
 
 # ── 清0 庫存明細 ───────────────────────────────────────────
 st.markdown("---")
