@@ -4,7 +4,6 @@ from pathlib import Path
 
 from utils.data_manager import (
     DATA_DIR,
-    append_orders,
     load_storage, save_storage,
     load_compare_table, save_compare_table,
     load_platform_orders, append_platform_orders,
@@ -230,8 +229,6 @@ with tab_order:
             if new.empty:
                 st.warning("未解析到任何訂單")
             else:
-                append_orders(new)
-
                 # 寫入平台專屬 xlsx（累積原始資料 + 去重）
                 plat_file = _PLAT_FILE.get(plat_short, plat_short)
                 if plat_file:
