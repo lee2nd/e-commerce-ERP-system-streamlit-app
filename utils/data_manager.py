@@ -179,15 +179,15 @@ def _save_excel(df: pd.DataFrame, filename: str, commit_msg: str):
 
 
 # ══════════════════════════════════════════════════════════════
-# 訂單（CSV）
+# 訂單（orders.xlsx）
 # ══════════════════════════════════════════════════════════════
 
 def load_orders() -> pd.DataFrame:
-    return _load_csv("orders")
+    return _load_excel("orders.xlsx")
 
 
 def save_orders(df: pd.DataFrame):
-    _save_csv(df, "orders")
+    _save_excel(df, "orders.xlsx", "chore: update orders.xlsx")
 
 
 def append_orders(new_df: pd.DataFrame) -> pd.DataFrame:
@@ -196,7 +196,7 @@ def append_orders(new_df: pd.DataFrame) -> pd.DataFrame:
         combined = new_df.copy()
     else:
         combined = pd.concat([existing, new_df], ignore_index=True)
-        combined = combined.drop_duplicates(keep="last")
+        combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
     save_orders(combined)
     return combined
 
@@ -262,15 +262,28 @@ def save_compare_table(df: pd.DataFrame):
 
 
 # ══════════════════════════════════════════════════════════════
-# 日報表（CSV）
+# 日報表（daily_report.xlsx）
 # ══════════════════════════════════════════════════════════════
 
 def load_daily_report() -> pd.DataFrame:
-    return _load_csv("daily_report")
+    return _load_excel("日報表.xlsx")
 
 
 def save_daily_report(df: pd.DataFrame):
-    _save_csv(df, "daily_report")
+    _save_excel(df, "日報表.xlsx", "chore: update 日報表.xlsx")
+
+
+def clear_daily_report():
+    """清空日報表，保留欄位結構。"""
+    cols = ["日期", "訂單編號", "訂單狀態", "商品名稱", "貨號",
+            "訂單金額", "折扣優惠", "買家支付運費", "平台補助運費",
+            "實際運費支出", "物流處理費（運費差額）", "未取貨/退貨運費",
+            "成交手續費", "其他服務費", "金流與系統處理費",
+            "發票處理費", "其他費用", "商品成本", "總成本", "淨利", "備註", "平台"]
+    existing = _load_excel("日報表.xlsx")
+    if not existing.empty:
+        cols = list(existing.columns)
+    _save_excel(pd.DataFrame(columns=cols), "日報表.xlsx", "chore: clear 日報表.xlsx")
 
 
 # ══════════════════════════════════════════════════════════════

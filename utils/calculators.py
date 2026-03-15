@@ -31,7 +31,7 @@ def auto_match_compare_table(
     )
 
     # ── 從入庫建立 貨號 → 入庫品名 的映射 ──
-    stg_name_map: dict[str, str] = {}
+    stg_name_map: dict = {}
     if storage_df is not None and not storage_df.empty and "貨號" in storage_df.columns:
         nm = storage_df[["貨號", "商品名稱", "規格"]].drop_duplicates("貨號").copy()
         nm["貨號"] = nm["貨號"].astype(str).str.strip()
@@ -133,141 +133,410 @@ def generate_delivery(
 
 
 # ══════════════════════════════════════════════════════════════
-# 日報表（需求 3 合併 A/B、需求 7 刪除促銷組合標籤）
+# 日報表
 # ══════════════════════════════════════════════════════════════
+
+def _build_stg_lookup(storage_df: pd.DataFrame) -> dict:
+    """貨號 → {名稱, 規格, 主貨號, 成本} using average cost"""
+    if storage_df.empty:
+        return {}
+    avg_cost = storage_df.groupby("貨號")["單位成本"].mean()
+    lookup = {}
+    for _, r in storage_df.drop_duplicates("貨號", keep="last").iterrows():
+        sku = str(r.get("貨號", "")).strip()
+        if sku and sku not in ("nan", ""):
+            lookup[sku] = {
+                "名稱": str(r.get("商品名稱", "")).strip(),
+                "規格": str(r.get("規格", "")).strip(),
+                "主貨號": str(r.get("主貨號", "")).strip(),
+                "成本": float(avg_cost.get(sku, 0) or 0),
+            }
+    return lookup
+
+
+def _n(val, default=0):
+    """Safe numeric conversion"""
+    try:
+        v = pd.to_numeric(val, errors="coerce")
+        return float(v) if pd.notna(v) else default
+    except Exception:
+        return default
+
+
+def _s(val) -> str:
+    v = str(val).strip()
+    return "" if v in ("nan", "None") else v
+
+
+def _build_item_strings(items: list[dict]) -> tuple[str, str]:
+    """Build 商品名稱 and 貨號 summary strings from item list"""
+    names, skus = [], []
+    seen_names = set()
+    for it in items:
+        n, spec, sku, qty = it["名稱"], it["規格"], it["sku"], it["qty"]
+        label = f"{n}[{spec}]" if spec else n
+        if label and label not in seen_names:
+            seen_names.add(label)
+            names.append(label)
+        if sku:
+            skus.append(f"{sku}({qty})")
+    return ", ".join(names), "; ".join(skus)
+
+
+def _ruten_logistics(shipping_method: str, settings: dict) -> float:
+    sm = shipping_method.lower()
+    if "萊爾富" in sm:
+        return float(settings.get("ruten_laerfu", 50))
+    if "郵局" in sm or "郵政" in sm:
+        return float(settings.get("ruten_post", 65))
+    if "ok" in sm:
+        return float(settings.get("ruten_ok", 60))
+    if "全家" in sm:
+        return float(settings.get("ruten_family", 60))
+    if "7-11" in sm:
+        return float(settings.get("ruten_7_11", 60))
+    return float(settings.get("ruten_default_shipping", 65))
+
+
+def _process_shopee(df: pd.DataFrame, stg: dict) -> list[dict]:
+    if df.empty:
+        return []
+    records = []
+    for _, row in df.iterrows():
+        if _s(row.get("不成立原因", "")) != "":
+            continue  # 不成立訂單跳過
+
+        oid = _s(row.get("訂單編號", ""))
+        if not oid:
+            continue
+
+        # 訂單狀態
+        ret_stat = _s(row.get("退貨 / 退款狀態", ""))
+        stat_raw = _s(row.get("訂單狀態", ""))
+        if ret_stat:
+            status = "退貨"
+        elif "遺失賠償" in stat_raw:
+            status = "遺失賠償"
+        else:
+            status = "已完成"
+
+        sku = _s(row.get("商品選項貨號", "")) or _s(row.get("主商品貨號", ""))
+        qty = int(_n(row.get("數量", 0)))
+        raw_act = row.get("商品活動價格")
+        act_p_raw = pd.to_numeric(str(raw_act), errors="coerce") if raw_act is not None else None
+        act_p = float(act_p_raw) if act_p_raw is not None and pd.notna(act_p_raw) else None
+        orig_p = _n(row.get("商品原價", 0))
+        price = act_p if act_p is not None else orig_p
+
+        stg_info = stg.get(sku, {})
+        item_name = stg_info.get("名稱") or _s(row.get("商品名稱", ""))
+        item_spec = stg_info.get("規格") or _s(row.get("商品選項名稱", ""))
+        item_cost = stg_info.get("成本", 0) * qty if stg_info else 0
+
+        records.append({
+            "_oid": oid, "_date": _s(row.get("訂單成立日期", ""))[:10],
+            "_status": status,
+            "_item": {"名稱": item_name, "規格": item_spec, "sku": sku, "qty": qty},
+            "_line_amt": price * qty,
+            "_item_cost": item_cost,
+            "_matched": bool(stg_info),
+            # order-level (take first per order)
+            "_coupon": abs(_n(row.get("賣場優惠券", 0))),
+            "_buyer_ship": _n(row.get("買家支付運費", 0)),
+            "_plat_ship": _n(row.get("蝦皮補助運費", 0)),
+            "_return_ship": abs(_n(row.get("退貨運費", 0))),
+            "_tx_fee": abs(_n(row.get("成交手續費", 0))),
+            "_svc_fee": abs(_n(row.get("其他服務費", 0))),
+            "_pay_fee": abs(_n(row.get("金流與系統處理費", 0))),
+        })
+
+    result = []
+    # group by order
+    from itertools import groupby as _groupby
+    records.sort(key=lambda x: x["_oid"])
+    for oid, grp in _groupby(records, key=lambda x: x["_oid"]):
+        rows = list(grp)
+        f = rows[0]
+        status = f["_status"]
+        is_ret = status == "退貨"
+
+        total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
+        total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
+
+        coupon = f["_coupon"]
+        buyer_ship = f["_buyer_ship"]
+        plat_ship = f["_plat_ship"]
+        ret_ship = f["_return_ship"] if is_ret else 0
+        tx_fee = f["_tx_fee"] if not is_ret else 0
+        svc_fee = f["_svc_fee"] if not is_ret else 0
+        pay_fee = f["_pay_fee"] if not is_ret else 0
+        
+        # 總成本：商品成本＋折扣優惠＋退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
+        total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
+        profit = total_amt - total_cost
+
+        item_name_str, sku_str = _build_item_strings([r["_item"] for r in rows])
+        result.append({
+            "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
+            "商品名稱": item_name_str, "貨號": sku_str,
+            "訂單金額": round(total_amt, 0),
+            "折扣優惠": round(coupon, 0),
+            "買家支付運費": round(buyer_ship, 0),
+            "平台補助運費": round(plat_ship, 0),
+            "實際運費支出": round(buyer_ship + plat_ship, 0),
+            "物流處理費（運費差額）": 0,
+            "未取貨/退貨運費": round(ret_ship, 0),
+            "成交手續費": round(tx_fee, 0),
+            "其他服務費": round(svc_fee, 0),
+            "金流與系統處理費": round(pay_fee, 0),
+            "發票處理費": 0, "其他費用": 0,
+            "商品成本": round(total_cost_item, 0),
+            "總成本": round(total_cost, 0),
+            "淨利": round(profit, 0),
+            "備註": "", "平台": "蝦皮",
+        })
+    return result
+
+
+def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict]:
+    if df.empty:
+        return []
+    records = []
+    for _, row in df.iterrows():
+        oid = _s(row.get("訂單編號", ""))
+        if not oid:
+            continue
+
+        tx_stat = _s(row.get("交易狀況", ""))
+        if "已領取退貨" in tx_stat:
+            status = "未取貨"
+        elif "取消" in tx_stat:
+            continue  # skip cancelled
+        else:
+            status = "已完成"
+
+        sku = _s(row.get("賣家自用料號", ""))
+        qty = int(_n(row.get("數量", 0)))
+        price = _n(row.get("單價", 0))
+
+        stg_info = stg.get(sku, {})
+        item_name = stg_info.get("名稱") or _s(row.get("商品名稱", ""))
+        item_spec_raw = _s(row.get("規格", "")) + ("::" + _s(row.get("項目", "")) if _s(row.get("項目", "")) else "")
+        item_spec = stg_info.get("規格") or item_spec_raw
+        item_cost = stg_info.get("成本", 0) * qty if stg_info else 0
+
+        # compute per-item ruten fees
+        tx_fee_unit = max(1, min(round(price * 0.03), 400))
+        svc_fee_total = max(1, min(round(price * qty * 0.05), 300 * qty))
+
+        ship_method = _s(row.get("運送方式", ""))
+        actual_ship = _ruten_logistics(ship_method, settings)
+        buyer_ship = _n(row.get("運費", 0))
+        ruten_disc = abs(_n(row.get("露天折扣碼金額", 0)))
+        checkout_total = _n(row.get("結帳總金額", 0))
+        seller_recv = checkout_total + ruten_disc
+        pay_fee = max(1, round(seller_recv * 0.015))
+
+        records.append({
+            "_oid": oid, "_date": _s(row.get("結帳時間", ""))[:10].replace("/", "-"),
+            "_status": status,
+            "_item": {"名稱": item_name, "規格": item_spec, "sku": sku, "qty": qty},
+            "_line_amt": price * qty,
+            "_item_cost": item_cost,
+            "_matched": bool(stg_info),
+            "_coupon": abs(_n(row.get("賣家折扣碼金額", 0))),
+            "_buyer_ship": buyer_ship,
+            "_actual_ship": actual_ship,
+            "_ship_method": ship_method,
+            "_tx_fee_per_unit": tx_fee_unit,
+            "_qty": qty,
+            "_svc_fee": svc_fee_total,
+            "_pay_fee": pay_fee,
+        })
+
+    result = []
+    records.sort(key=lambda x: x["_oid"])
+    from itertools import groupby as _groupby
+    for oid, grp in _groupby(records, key=lambda x: x["_oid"]):
+        rows = list(grp)
+        f = rows[0]
+        status = f["_status"]
+        is_ret = status == "未取貨"
+
+        total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
+        total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
+
+        coupon = f["_coupon"]
+        buyer_ship = f["_buyer_ship"]
+        actual_ship = f["_actual_ship"]
+        plat_ship = max(0, actual_ship - buyer_ship)
+        logistics_diff = max(0, buyer_ship - actual_ship)
+
+        ret_ship = actual_ship if is_ret else 0
+        tx_fee = sum(r["_tx_fee_per_unit"] * r["_qty"] for r in rows) if not is_ret else 0
+        svc_fee = sum(r["_svc_fee"] for r in rows) if not is_ret else 0
+        pay_fee = f["_pay_fee"] if not is_ret else 0
+
+        # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
+        total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
+        profit = total_amt - total_cost
+
+        item_name_str, sku_str = _build_item_strings([r["_item"] for r in rows])
+        result.append({
+            "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
+            "商品名稱": item_name_str, "貨號": sku_str,
+            "訂單金額": round(total_amt, 0),
+            "折扣優惠": round(coupon, 0),
+            "買家支付運費": round(buyer_ship, 0),
+            "平台補助運費": round(plat_ship, 0),
+            "實際運費支出": round(actual_ship, 0),
+            "物流處理費（運費差額）": round(logistics_diff, 0),
+            "未取貨/退貨運費": round(ret_ship, 0),
+            "成交手續費": round(tx_fee, 0),
+            "其他服務費": round(svc_fee, 0),
+            "金流與系統處理費": round(pay_fee, 0),
+            "發票處理費": 0, "其他費用": 0,
+            "商品成本": round(total_cost_item, 0),
+            "總成本": round(total_cost, 0),
+            "淨利": round(profit, 0),
+            "備註": "", "平台": "露天",
+        })
+    return result
+
+
+def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict]:
+    if df.empty:
+        return []
+    actual_ship = float(settings.get("easystore_shipping", 65))
+
+    # forward-fill order-level columns
+    order_cols = ["Order Name", "Date", "Subtotal", "Shipping Fee", "Order Discount",
+                  "Credit Used", "Financial Status", "Remark"]
+    df = df.copy()
+    for c in order_cols:
+        if c in df.columns:
+            df[c] = df[c].ffill()
+
+    if "Item Name" in df.columns:
+        df = df[df["Item Name"].notna() & (df["Item Name"].astype(str).str.strip() != "")]
+
+    records = []
+    for _, row in df.iterrows():
+        oid = _s(row.get("Order Name", ""))
+        if not oid:
+            continue
+
+        remark = _s(row.get("Remark", ""))
+        fin_stat = _s(row.get("Financial Status", ""))
+        if "cancel" in remark.lower() or "取消訂購" in remark:
+            status = "未取貨"
+        elif "refund" in fin_stat.lower():
+            status = "退貨"
+        else:
+            status = "已完成"
+
+        sku = _s(row.get("Item SKU", ""))
+        qty = int(_n(row.get("Quantity", 0)))
+        price = _n(row.get("Item Price", 0))
+
+        stg_info = stg.get(sku, {})
+        item_name = stg_info.get("名稱") or _s(row.get("Item Name", ""))
+        item_spec = stg_info.get("規格") or _s(row.get("Item Variant", ""))
+        item_cost = stg_info.get("成本", 0) * qty if stg_info else 0
+
+        subtotal = _n(row.get("Subtotal", 0))
+        order_disc = abs(_n(row.get("Order Discount", 0)))
+        credit = abs(_n(row.get("Credit Used", 0)))
+        buyer_ship = _n(row.get("Shipping Fee", 0))
+
+        records.append({
+            "_oid": oid, "_date": _s(row.get("Date", ""))[:10],
+            "_status": status,
+            "_item": {"名稱": item_name, "規格": item_spec, "sku": sku, "qty": qty},
+            "_line_amt": price * qty,
+            "_item_cost": item_cost,
+            "_matched": bool(stg_info),
+            "_subtotal": subtotal,
+            "_order_disc": order_disc,
+            "_credit": credit,
+            "_buyer_ship": buyer_ship,
+        })
+
+    result = []
+    records.sort(key=lambda x: x["_oid"])
+    from itertools import groupby as _groupby
+    for oid, grp in _groupby(records, key=lambda x: x["_oid"]):
+        rows = list(grp)
+        f = rows[0]
+        status = f["_status"]
+        is_ret = status in ("未取貨", "退貨")
+
+        total_amt = f["_subtotal"] if not is_ret else 0
+        total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
+
+        coupon = f["_order_disc"] + f["_credit"]
+        buyer_ship = f["_buyer_ship"]
+        logistics_diff = max(0, actual_ship - buyer_ship)
+        ret_ship = actual_ship if is_ret else 0
+
+        # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
+        total_cost = total_cost_item + coupon + ret_ship
+        profit = total_amt - total_cost
+
+        item_name_str, sku_str = _build_item_strings([r["_item"] for r in rows])
+        result.append({
+            "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
+            "商品名稱": item_name_str, "貨號": sku_str,
+            "訂單金額": round(total_amt, 0),
+            "折扣優惠": round(coupon, 0),
+            "買家支付運費": round(buyer_ship, 0),
+            "平台補助運費": 0,
+            "實際運費支出": round(actual_ship, 0),
+            "物流處理費（運費差額）": round(logistics_diff, 0),
+            "未取貨/退貨運費": round(ret_ship, 0),
+            "成交手續費": 0, "其他服務費": 0,
+            "金流與系統處理費": 0, "發票處理費": 0, "其他費用": 0,
+            "商品成本": round(total_cost_item, 0),
+            "總成本": round(total_cost, 0),
+            "淨利": round(profit, 0),
+            "備註": "", "平台": "官網",
+        })
+    return result
+
+
 def generate_daily_report(
-    orders_df: pd.DataFrame,
+    shopee_raw: pd.DataFrame,
+    ruten_raw: pd.DataFrame,
+    easystore_raw: pd.DataFrame,
     compare_df: pd.DataFrame,
     storage_df: pd.DataFrame,
     settings: dict,
 ) -> pd.DataFrame:
-    if orders_df.empty:
+    """
+    Generate daily report from raw platform DataFrames.
+    settings keys:
+      ruten_7_11, ruten_family, ruten_ok, ruten_laerfu, ruten_post,
+      ruten_default_shipping, easystore_shipping
+    """
+    stg = _build_stg_lookup(storage_df)
+
+    all_records = (
+        _process_shopee(shopee_raw, stg)
+        + _process_ruten(ruten_raw, stg, settings)
+        + _process_easystore(easystore_raw, stg, settings)
+    )
+    if not all_records:
         return pd.DataFrame()
 
-    df = orders_df.copy()
+    df = pd.DataFrame(all_records)
+    df["日期"] = pd.to_datetime(df["日期"], errors="coerce")
+    df = df.sort_values(["日期", "平台", "訂單編號"]).reset_index(drop=True)
 
-    # ---- 1. 合併貨號 ------------------------------------------------
-    if not compare_df.empty and "平台商品名稱" in compare_df.columns:
-        m = compare_df[["平台商品名稱", "貨號"]].drop_duplicates("平台商品名稱")
-        df = df.merge(
-            m.rename(columns={"貨號": "_sku_cmp"}),
-            on="平台商品名稱", how="left",
-        )
-        df["_sku"] = df["_sku_cmp"].where(
-            df["_sku_cmp"].notna() & (~df["_sku_cmp"].isin(["", "nan"])),
-            df["貨號"],
-        )
-        df.drop(columns=["_sku_cmp"], inplace=True)
-    else:
-        df["_sku"] = df["貨號"]
+    # Mark unmatched orders (商品名稱 is empty and 商品成本 == 0)
+    df["_unmatched"] = (df["商品名稱"].fillna("") == "") & (df["商品成本"] == 0)
+    # (keep _unmatched as internal; page can use it for colouring)
 
-    # ---- 2. 合併成本 ------------------------------------------------
-    if not storage_df.empty and "貨號" in storage_df.columns:
-        avg = storage_df.groupby("貨號")["單位成本"].mean().reset_index()
-        avg.columns = ["_sku", "平均成本"]
-        df = df.merge(avg, on="_sku", how="left")
-    else:
-        df["平均成本"] = 0
-
-    df["平均成本"] = pd.to_numeric(df["平均成本"], errors="coerce").fillna(0)
-    df["_item_cost"] = df["數量"] * df["平均成本"]
-
-    # ---- 3. 入庫名稱 lookup -----------------------------------------
-    name_lookup: dict = {}
-    if not storage_df.empty and "貨號" in storage_df.columns:
-        nm = storage_df[["貨號", "商品名稱", "規格"]].drop_duplicates("貨號")
-        nm["_name"] = nm["商品名稱"].fillna("") + "[" + nm["規格"].fillna("") + "]"
-        name_lookup = nm.set_index("貨號")["_name"].to_dict()
-    df["_storage_name"] = df["_sku"].map(name_lookup).fillna("")
-
-    # ---- 4. 按訂單彙總 ----------------------------------------------
-    grouped = df.groupby("訂單編號", sort=False)
-
-    agg = grouped.agg(
-        日期=("日期", "first"),
-        平台=("平台", "first"),
-        訂單狀態=("訂單狀態", "first"),
-        營業額=("金額", "sum"),
-        成本=("_item_cost", "sum"),
-        賣家折扣=("賣家折扣", "first"),
-    ).reset_index()
-
-    # 貨號明細
-    sku_detail = grouped.apply(
-        lambda g: ";".join(
-            f"{r['_sku']}({int(r['數量'])})"
-            for _, r in g.iterrows()
-            if pd.notna(r["_sku"]) and str(r["_sku"]) not in ("", "nan")
-        ),
-    ).reset_index(name="貨號明細")
-    agg = agg.merge(sku_detail, on="訂單編號", how="left")
-
-    # 入庫名稱
-    name_detail = grouped.apply(
-        lambda g: ",".join(sorted({
-            n for n in g["_storage_name"] if n and n != "[]"
-        })),
-    ).reset_index(name="入庫名稱")
-    agg = agg.merge(name_detail, on="訂單編號", how="left")
-
-    # ---- 5. 特殊狀態 ------------------------------------------------
-    cancel = agg["訂單狀態"].str.contains("取消", case=False, na=False)
-    ret    = agg["訂單狀態"].str.contains("退貨|退款", case=False, na=False)
-
-    agg.loc[cancel, ["營業額", "成本"]] = 0
-    agg.loc[ret, "營業額"] = 0
-
-    # ---- 6. 費用計算 ------------------------------------------------
-    agg["賣家折扣"] = pd.to_numeric(agg["賣家折扣"], errors="coerce").fillna(0).abs()
-    net = (agg["營業額"] - agg["賣家折扣"]).clip(lower=0)
-
-    agg["運費折抵"]   = 0.0
-    agg["成交手續費"] = 0.0
-    agg["金流服務費"] = 0.0
-
-    for plat in ("蝦皮", "露天", "官網"):
-        mask = agg["平台"] == plat
-        if not mask.any():
-            continue
-        fee  = settings.get(f"{plat}_成交手續費率", 0)
-        pay  = settings.get(f"{plat}_金流服務費率", 0)
-        thres = settings.get(f"{plat}_免運門檻", 0)
-        ship  = settings.get(f"{plat}_運費折抵金額", 0)
-
-        agg.loc[mask, "成交手續費"] = (net[mask] * fee).round(0)
-        agg.loc[mask, "金流服務費"] = (net[mask] * pay).round(0)
-
-        if thres > 0 and ship > 0:
-            eligible = mask & (agg["營業額"] >= thres) & ~cancel & ~ret
-            agg.loc[eligible, "運費折抵"] = ship
-
-    agg.loc[cancel | ret, ["成交手續費", "金流服務費", "運費折抵"]] = 0
-
-    # ---- 7. 淨利 ----------------------------------------------------
-    agg["淨利"] = (
-        agg["營業額"] - agg["賣家折扣"] - agg["運費折抵"]
-        - agg["成交手續費"] - agg["金流服務費"] - agg["成本"]
-    ).round(0)
-
-    # ---- 8. 狀態標記 ------------------------------------------------
-    agg["出貨狀態"] = ""
-    agg.loc[cancel, "出貨狀態"] = "!取消!"
-    agg.loc[ret, "出貨狀態"]    = "!退貨!"
-    normal_no_cost = ~cancel & ~ret & ((agg["成本"] == 0) | agg["成本"].isna())
-    agg.loc[normal_no_cost, "出貨狀態"] = "!未匹配!"
-
-    # ---- 9. 排序 & 輸出 ---------------------------------------------
-    agg = agg.sort_values("日期").reset_index(drop=True)
-
-    cols = [
-        "日期", "訂單編號", "入庫名稱", "貨號明細",
-        "營業額", "賣家折扣", "運費折抵", "成交手續費", "金流服務費",
-        "成本", "淨利", "出貨狀態", "平台",
-    ]
-    for c in cols:
-        if c not in agg.columns:
-            agg[c] = ""
-    return agg[cols]
+    return df
 
 
 # ══════════════════════════════════════════════════════════════
@@ -279,21 +548,22 @@ def generate_monthly_report(daily_df: pd.DataFrame) -> pd.DataFrame:
 
     df = daily_df.copy()
     df["日期"] = pd.to_datetime(df["日期"], errors="coerce")
-    df["月份"] = df["日期"].dt.month
+    df["月份"] = df["日期"].dt.to_period("M").astype(str)
 
-    monthly = df.groupby("月份").agg(
-        營業額=("營業額", "sum"),
-        成本=("成本", "sum"),
-        賣家折扣=("賣家折扣", "sum"),
-        運費折抵=("運費折抵", "sum"),
-        成交手續費=("成交手續費", "sum"),
-        金流服務費=("金流服務費", "sum"),
-        淨利=("淨利", "sum"),
-        訂單數=("訂單編號", "count"),
-    ).reset_index()
+    # Map new column names → monthly aggregation
+    _col = lambda name: name if name in df.columns else None
+    agg_dict = {"訂單數": ("訂單編號", "count")}
+    for col in ["訂單金額", "折扣優惠", "未取貨/退貨運費", "成交手續費", "其他服務費",
+                "金流與系統處理費", "商品成本", "總成本", "淨利",
+                # fallback old names
+                "營業額", "成本", "賣家折扣", "運費折抵", "金流服務費"]:
+        if col in df.columns:
+            agg_dict[col] = (col, "sum")
 
-    for c in ["營業額", "成本", "賣家折扣", "運費折抵", "成交手續費", "金流服務費", "淨利"]:
-        monthly[c] = monthly[c].round(0).astype(int)
+    monthly = df.groupby("月份").agg(**agg_dict).reset_index()
+    for c in list(monthly.columns):
+        if c not in ("月份",):
+            monthly[c] = pd.to_numeric(monthly[c], errors="coerce").fillna(0).round(0).astype(int)
 
     return monthly.sort_values("月份").reset_index(drop=True)
 
