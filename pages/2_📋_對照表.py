@@ -87,7 +87,7 @@ if not compare.empty:
             return [""] * len(row)
 
         def _highlight_unmatched(val):
-            return "color: red; font-weight: bold" if val == "未匹配" else ""
+            return "color: red" if val == "未匹配" else ""
 
         styled_view = (
             view[["平台", "平台商品名稱", "貨號", "主貨號", "入庫品名"]]

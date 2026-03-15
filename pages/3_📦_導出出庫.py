@@ -32,12 +32,18 @@ if not storage.empty:
 
 # 從對照表建立 (平台商品名稱, 平台) → 入庫品名 映射
 compare_mapping: dict[tuple[str, str], str] = {}
+# (平台商品名稱, 平台) → {貨號, 主貨號}
+compare_sku_mapping: dict[tuple[str, str], dict] = {}
 if not compare.empty:
     for _, row in compare.iterrows():
         key = (str(row.get("平台商品名稱", "")).strip(), str(row.get("平台", "")).strip())
         stg_name = str(row.get("入庫品名", "")).strip()
         if stg_name:
             compare_mapping[key] = stg_name
+        compare_sku_mapping[key] = {
+            "貨號": str(row.get("貨號", "")).strip(),
+            "主貨號": str(row.get("主貨號", "")).strip(),
+        }
 
 
 def _filter_shopee(df: pd.DataFrame) -> pd.DataFrame:
@@ -147,26 +153,47 @@ def generate_delivery() -> pd.DataFrame:
             
             # 查對照表取得入庫品名
             stg_name = compare_mapping.get((plat_key, platform), "")
+            # 入庫品名為空且不是"未匹配"：對照表內完全沒有這筆訂單記錄，跳過
             if not stg_name:
-                continue  # 未匹配則跳過
-            
-            # 從入庫品名拆出名稱與規格
-            if "[" in stg_name and stg_name.endswith("]"):
-                parts = stg_name.rsplit("[", 1)
-                prod_name = parts[0]
-                prod_spec = parts[1].rstrip("]")
+                continue
+
+            if stg_name == "未匹配":
+                # 入庫品名为未匹配：用平台原始資料
+                sku_info = compare_sku_mapping.get((plat_key, platform), {})
+                sku = sku_info.get("貨號", "")
+                main_sku = sku_info.get("主貨號", "")
+                if platform == "蝦皮":
+                    prod_name = str(row.get("商品名稱", "")).strip()
+                    prod_spec = str(row.get("商品選項名稱", "")).strip()
+                elif platform == "露天":
+                    prod_name = str(row.get("商品名稱", "")).strip()
+                    s1 = str(row.get("規格", "")).strip()
+                    s2 = str(row.get("項目", "")).strip()
+                    prod_spec = f"{s1}::{s2}".strip("::") if s1 or s2 else ""
+                elif platform == "官網":
+                    prod_name = str(row.get("Item Name", "")).strip()
+                    prod_spec = str(row.get("Item Variant", "")).strip()
+                else:
+                    prod_name = plat_key
+                    prod_spec = ""
+                is_unmatched = True
             else:
-                prod_name = stg_name
-                prod_spec = ""
-            
-            # 查入庫表取得貨號、主貨號
-            sku_info = stg_mapping.get(stg_name, {})
-            sku = sku_info.get("貨號", "")
-            main_sku = sku_info.get("主貨號", "")
-            
+                # 正常匹配流程
+                if "[" in stg_name and stg_name.endswith("]"):
+                    parts = stg_name.rsplit("[", 1)
+                    prod_name = parts[0]
+                    prod_spec = parts[1].rstrip("]")
+                else:
+                    prod_name = stg_name
+                    prod_spec = ""
+                sku_info = stg_mapping.get(stg_name, {})
+                sku = sku_info.get("貨號", "")
+                main_sku = sku_info.get("主貨號", "")
+                is_unmatched = False
+
             # 取得訂單資料
             order_data = _get_order_data(row, platform)
-            
+
             records.append({
                 "主貨號": main_sku,
                 "貨號": sku,
@@ -177,6 +204,7 @@ def generate_delivery() -> pd.DataFrame:
                 "金額": order_data["數量"] * order_data["單價"],
                 "出庫日期": order_data["日期"],
                 "平台": platform,
+                "匹配狀態": "未匹配" if is_unmatched else "",
             })
     
     if records:
@@ -227,10 +255,10 @@ if not existing_delivery.empty:
 if compare.empty:
     st.warning("⚠️ 對照表為空，請先至「對照表管理」頁面建立商品對照")
 else:
-    matched_count = (compare["入庫品名"].fillna("").astype(str) != "").sum()
+    unmatched_count = (compare["入庫品名"].fillna("").astype(str) == "未匹配").sum()
     total_count = len(compare)
-    if matched_count < total_count:
-        st.info(f"📋 對照表：{matched_count}/{total_count} 筆已匹配，未匹配的商品將不會出現在出庫資料中")
+    if unmatched_count > 0:
+        st.info(f"📋 對照表：{unmatched_count}/{total_count} 筆未匹配入庫，出庫會使用平台原始資料並標紅色提示")
 
 # 導出出庫按鈕
 if st.button("🚀 導出出庫", type="primary"):
@@ -254,15 +282,27 @@ if delivery.empty:
 else:
     # 平台顏色標註
     _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
-    
-    def _highlight_platform(row):
+
+    def _highlight_row(row):
+        is_unmatched = "匹配狀態" in delivery.columns and delivery.at[row.name, "匹配狀態"] == "未匹配"
         color = _PLAT_COLORS.get(row.get("平台", ""), "")
-        if color:
-            return [f"background-color: {color}20; color: {color}" if c == "平台"
-                    else f"background-color: {color}10" for c in row.index]
-        return [""] * len(row)
-    
-    styled = delivery.style.apply(_highlight_platform, axis=1)
+        result = []
+        for c in row.index:
+            if is_unmatched:
+                if c == "平台" and color:
+                    result.append(f"background-color: {color}20; color: {color}")
+                else:
+                    bg = f"background-color: {color}10" if color else ""
+                    result.append(f"{bg}; color: red" if bg else "color: red")
+            elif color:
+                result.append(f"background-color: {color}20; color: {color}" if c == "平台"
+                               else f"background-color: {color}10")
+            else:
+                result.append("")
+        return result
+
+    display_cols = [c for c in delivery.columns if c != "匹配狀態"]
+    styled = delivery[display_cols].style.apply(_highlight_row, axis=1)
     st.dataframe(styled, width='stretch', hide_index=True)
 
 # ── 清0 出庫資料 ───────────────────────────────────────────
