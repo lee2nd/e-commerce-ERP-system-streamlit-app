@@ -47,7 +47,11 @@ def auto_match_compare_table(
         df["貨號"] = df["_sku"].fillna("").astype(str)
         df.drop(columns=["_sku"], errors="ignore", inplace=True)
         df["主貨號"] = df["貨號"].apply(lambda s: s.split("-")[0] if s else "")
-        df["入庫品名"] = df["貨號"].map(stg_name_map).fillna("")
+        df["入庫品名"] = df["貨號"].map(stg_name_map)
+        df["入庫品名"] = df.apply(
+            lambda r: r["入庫品名"] if pd.notna(r["入庫品名"]) else ("未匹配" if r["貨號"] else ""),
+            axis=1,
+        )
         return df
 
     all_prods = (

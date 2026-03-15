@@ -20,7 +20,7 @@ storage = load_storage()
 if not compare.empty:
     total = len(compare)
     matched = int(
-        (compare["貨號"].fillna("").astype(str).str.strip() != "").sum()
+        (compare["入庫品名"].fillna("").astype(str).str.strip().isin(["", "未匹配"]) == False).sum()
     )
     c1, c2, c3 = st.columns(3)
     c1.metric("總商品數", total)
@@ -70,9 +70,9 @@ if not compare.empty:
 
     view = compare.copy()
     if filter_opt == "未匹配":
-        view = view[view["貨號"].str.strip() == ""]
+        view = view[view["入庫品名"].astype(str) == "未匹配"]
     elif filter_opt == "已匹配":
-        view = view[view["貨號"].str.strip() != ""]
+        view = view[~view["入庫品名"].astype(str).isin(["", "未匹配"])]
 
     if view.empty:
         st.info("沒有符合條件的項目")
@@ -86,8 +86,13 @@ if not compare.empty:
                         else f"background-color: {color}10" for c in row.index]
             return [""] * len(row)
 
-        styled_view = view[["平台", "平台商品名稱", "貨號", "主貨號", "入庫品名"]].style.apply(
-            _highlight_platform, axis=1
+        def _highlight_unmatched(val):
+            return "color: red; font-weight: bold" if val == "未匹配" else ""
+
+        styled_view = (
+            view[["平台", "平台商品名稱", "貨號", "主貨號", "入庫品名"]]
+            .style.apply(_highlight_platform, axis=1)
+            .map(_highlight_unmatched, subset=["入庫品名"])
         )
         st.dataframe(styled_view, width='stretch', hide_index=True)
 
