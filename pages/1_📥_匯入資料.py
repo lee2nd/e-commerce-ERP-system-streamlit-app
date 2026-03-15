@@ -178,7 +178,7 @@ with tab_order:
     if st.session_state.pop("order_upload_success", None) is not None:
         st.success("✅ 訂單匯入成功")
 
-    platform = st.selectbox("選擇平台", ["蝦皮", "露天", "官網 (EasyStore)", "MOMO"], index=0)
+    platform = st.selectbox("選擇平台", ["蝦皮", "露天", "官網 (EasyStore)", "MO店"], index=0)
     uploaded = st.file_uploader(
         "上傳訂單檔案",
         type=["xlsx", "xls", "csv"],
@@ -186,7 +186,7 @@ with tab_order:
     )
 
     # 平台名稱 → 檔案名稱對應
-    _PLAT_FILE = {"蝦皮": "蝦皮", "露天": "露天", "官網": "官網", "MOMO": "MOMO"}
+    _PLAT_FILE = {"蝦皮": "蝦皮", "露天": "露天", "官網": "官網", "MO店": "MO店"}
 
     # 各平台特徵欄位數（用來驗證上傳檔案是否與所選平台一致）
     _PLAT_COL_COUNT = {
