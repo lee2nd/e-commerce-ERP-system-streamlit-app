@@ -15,42 +15,66 @@ def auto_match_compare_table(
     if orders_df.empty:
         return existing_compare_df if existing_compare_df is not None else pd.DataFrame()
 
-    new_prods = (
-        orders_df[["平台商品名稱", "平台"]]
+    result_cols = ["平台商品名稱", "平台", "入庫品名", "貨號", "主貨號"]
+
+    # ── 從訂單取 貨號：同一個(平台商品名稱, 平台) 取第一個非空 SKU ──
+    sku_src = (
+        orders_df[["平台商品名稱", "平台", "貨號"]].copy()
+        .assign(貨號=lambda d: d["貨號"].astype(str).str.strip())
+    )
+    sku_src = (
+        sku_src[sku_src["貨號"].str.len() > 0]
+        .replace("nan", "")
+        .query('貨號 != ""')
         .drop_duplicates(subset=["平台商品名稱", "平台"])
+        .rename(columns={"貨號": "_sku"})
+    )
+
+    # ── 從入庫建立 貨號 → 入庫品名 的映射 ──
+    stg_name_map: dict[str, str] = {}
+    if storage_df is not None and not storage_df.empty and "貨號" in storage_df.columns:
+        nm = storage_df[["貨號", "商品名稱", "規格"]].drop_duplicates("貨號").copy()
+        nm["貨號"] = nm["貨號"].astype(str).str.strip()
+        nm["規格"] = nm["規格"].fillna("").astype(str)
+        nm["商品名稱"] = nm["商品名稱"].fillna("").astype(str)
+        nm["_label"] = nm.apply(
+            lambda r: f"{r['商品名稱']}[{r['規格']}]" if r["規格"] else r["商品名稱"], axis=1
+        )
+        stg_name_map = nm.set_index("貨號")["_label"].to_dict()
+
+    def _enrich(df: pd.DataFrame) -> pd.DataFrame:        
+        df = df.merge(sku_src, on=["平台商品名稱", "平台"], how="left")
+        df["貨號"] = df["_sku"].fillna("").astype(str)
+        df.drop(columns=["_sku"], errors="ignore", inplace=True)
+        df["主貨號"] = df["貨號"].apply(lambda s: s.split("-")[0] if s else "")
+        df["入庫品名"] = df["貨號"].map(stg_name_map).fillna("")
+        return df
+
+    all_prods = (
+        orders_df[["平台商品名稱", "平台"]]
+        .drop_duplicates()
         .copy()
     )
 
-    # 去除已存在的
-    if existing_compare_df is not None and not existing_compare_df.empty:
-        known = set(
-            existing_compare_df["平台商品名稱"].astype(str)
-            + "||" + existing_compare_df["平台"].astype(str)
-        )
-        new_prods = new_prods[
-            ~(new_prods["平台商品名稱"].astype(str)
-              + "||" + new_prods["平台"].astype(str)).isin(known)
-        ]
-
-    if new_prods.empty:
-        return existing_compare_df if existing_compare_df is not None else pd.DataFrame()
-
-    entries = new_prods.copy()
-    entries["主貨號"] = ""
-    entries["貨號"] = ""
-    entries["入庫品名"] = ""
-
-    result_cols = ["平台商品名稱", "平台", "入庫品名", "貨號", "主貨號"]
     if existing_compare_df is not None and not existing_compare_df.empty:
         for c in result_cols:
             if c not in existing_compare_df.columns:
                 existing_compare_df[c] = ""
-        result = pd.concat(
-            [existing_compare_df[result_cols], entries[result_cols]],
-            ignore_index=True,
+        # 更新現有列的 貨號/主貨號/入庫品名
+        existing = _enrich(existing_compare_df[["平台商品名稱", "平台"]].copy())
+        # 新增尚未存在的項目
+        known = set(
+            existing_compare_df["平台商品名稱"].astype(str)
+            + "||" + existing_compare_df["平台"].astype(str)
         )
+        new_only = all_prods[
+            ~(all_prods["平台商品名稱"].astype(str)
+              + "||" + all_prods["平台"].astype(str)).isin(known)
+        ].copy()
+        new_only = _enrich(new_only)
+        result = pd.concat([existing[result_cols], new_only[result_cols]], ignore_index=True)
     else:
-        result = entries[result_cols].copy()
+        result = _enrich(all_prods)[result_cols].copy()
 
     return result.drop_duplicates(subset=["平台商品名稱", "平台"]).reset_index(drop=True)
 

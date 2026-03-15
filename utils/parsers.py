@@ -67,7 +67,7 @@ def parse_shopee(file) -> pd.DataFrame:
     c_deal  = _find_col(df, ["成交價格", "Deal Price"])
     c_qty   = _find_col(df, ["數量", "Quantity"]) or (df.columns[27] if len(df.columns) > 27 else df.columns[-2])
     c_disc  = _find_col(df, ["賣家折扣", "Seller Discount", "賣家優惠券", "賣家折扣活動"])
-    c_sku   = _find_col(df, ["商品SKU", "SKU Reference", "商品貨號", "sku_reference"])
+    c_sku   = _find_col(df, ["商品選項貨號", "商品SKU", "SKU Reference", "商品貨號", "sku_reference"])
 
     out = pd.DataFrame()
     out["訂單編號"] = df[c_oid].astype(str).str.strip()
