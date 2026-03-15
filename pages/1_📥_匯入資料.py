@@ -117,6 +117,14 @@ with tab_storage:
                     keep_cols = ["主貨號", "貨號", "商品名稱", "規格", "數量", "單位成本", "總金額", "入庫日期"]
                     new_stg = new_stg[keep_cols]
 
+                    # 相同 主貨號/貨號/商品名稱/規格/單位成本/入庫日期 → 合併數量與總金額
+                    group_keys = ["主貨號", "貨號", "商品名稱", "規格", "單位成本", "入庫日期"]
+                    new_stg = (
+                        new_stg.groupby(group_keys, dropna=False, sort=False)
+                        .agg(數量=("數量", "sum"), 總金額=("總金額", "sum"))
+                        .reset_index()[keep_cols]
+                    )
+
                     # 整份取代（使用者應在 Excel 中保留舊資料 + 新增資料後上傳）
                     save_storage(new_stg)
                     st.session_state["stg_upload_success"] = len(new_stg)
@@ -147,7 +155,16 @@ with tab_storage:
                 "總金額": total, "入庫日期": str(stg_date),
             }])
             existing = load_storage()
-            save_storage(pd.concat([existing, row], ignore_index=True))
+            combined = pd.concat([existing, row], ignore_index=True)
+            # 相同 主貨號/貨號/商品名稱/規格/單位成本/入庫日期 → 合併數量與總金額
+            _keep = ["主貨號", "貨號", "商品名稱", "規格", "數量", "單位成本", "總金額", "入庫日期"]
+            _grp  = ["主貨號", "貨號", "商品名稱", "規格", "單位成本", "入庫日期"]
+            combined = (
+                combined.groupby(_grp, dropna=False, sort=False)
+                .agg(數量=("數量", "sum"), 總金額=("總金額", "sum"))
+                .reset_index()[_keep]
+            )
+            save_storage(combined)
             st.session_state["stg_success"] = True 
             st.rerun()
             
