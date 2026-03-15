@@ -1,6 +1,7 @@
 import streamlit as st
 from utils.data_manager import (
     load_storage, load_delivery,
+    load_compare_table,
     load_inventory_details, save_inventory_details,
     clear_inventory_details,
 )
@@ -12,10 +13,20 @@ st.title("🔎 庫存明細")
 if st.button("🔄 更新庫存明細", type="primary"):
     storage  = load_storage()
     delivery = load_delivery()
+    compare  = load_compare_table()
     if storage.empty:
         st.warning("請先至「匯入資料」頁面新增入庫資料")
     else:
         result = generate_inventory_details(storage, delivery)
+        # 過濾掉對照表內未匹配的項目（入庫品名為空或"未匹配"）
+        if not compare.empty and "貨號" in compare.columns and "入庫品名" in compare.columns:
+            matched_skus = set(
+                compare.loc[
+                    ~compare["入庫品名"].fillna("").astype(str).isin(["", "未匹配"]),
+                    "貨號"
+                ].astype(str).str.strip()
+            )
+            result = result[result["貨號"].astype(str).str.strip().isin(matched_skus)]
         save_inventory_details(result)
         st.success(f"✅ 庫存明細已更新！共 {len(result)} 筆")
         st.rerun()
