@@ -169,7 +169,37 @@ with tab_storage:
             st.rerun()
             
     if st.session_state.pop("stg_success", False):
-        st.success("新增成功")            
+        st.success("新增成功")
+
+    # 手動刪除
+    st.markdown("---")
+    st.subheader("網頁刪除入庫")
+    with st.form("del_stg", clear_on_submit=True):
+        d1 = st.columns(2)
+        del_sku  = d1[0].text_input("貨號")
+        del_date = d1[1].date_input("入庫日期")
+        if st.form_submit_button("🗑️ 刪除"):
+            if not del_sku:
+                st.warning("請輸入貨號")
+            else:
+                existing = load_storage()
+                del_date_str = str(del_date)
+                mask = ~(
+                    (existing["貨號"].astype(str) == del_sku) &
+                    (existing["入庫日期"].astype(str) == del_date_str)
+                )
+                updated = existing[mask].reset_index(drop=True)
+                if len(updated) == len(existing):
+                    st.session_state["stg_del_notfound"] = True
+                else:
+                    save_storage(updated)
+                    st.session_state["stg_del_success"] = True
+                st.rerun()
+
+    if st.session_state.pop("stg_del_success", False):
+        st.success("刪除成功")
+    if st.session_state.pop("stg_del_notfound", False):
+        st.warning("找不到符合的資料，請確認貨號與入庫日期是否正確")
 
     # ── 清0 入庫資料 ──────────────────────────────────────────
     st.markdown("---")
