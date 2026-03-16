@@ -12,6 +12,18 @@ from utils.data_manager import (
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
 from utils.calculators import auto_match_compare_table
 
+
+def _to_arrow_safe_display_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert mixed-type object columns to strings to avoid Arrow serialization errors."""
+    if df.empty:
+        return df
+
+    safe_df = df.copy()
+    for col in safe_df.columns:
+        if pd.api.types.is_object_dtype(safe_df[col]):
+            safe_df[col] = safe_df[col].map(lambda v: "" if pd.isna(v) else str(v))
+    return safe_df
+
 # 調整元件的樣式
 st.markdown("""
     <style>
@@ -298,7 +310,7 @@ with tab_order:
         pdf = load_platform_orders(plat_file)
         st.markdown(f"**{plat_name}**（{len(pdf)} 筆）")
         if not pdf.empty:
-            st.dataframe(pdf, width="stretch", hide_index=True)
+            st.dataframe(_to_arrow_safe_display_df(pdf), width="stretch", hide_index=True)
         else:
             st.info(f"尚未匯入{plat_file}訂單")
 

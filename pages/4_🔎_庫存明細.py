@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 from utils.data_manager import (
     load_storage, load_delivery,
     load_compare_table,
@@ -6,6 +7,23 @@ from utils.data_manager import (
     clear_inventory_details,
 )
 from utils.calculators import generate_inventory_details
+
+SIZE_ORDER = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]
+SIZE_RANK = {s: i for i, s in enumerate(SIZE_ORDER)}
+
+
+def extract_size(spec: str) -> str:
+    """Extract the first matching size token from a spec string."""
+    spec_text = "" if pd.isna(spec) else str(spec)
+    for size in reversed(SIZE_ORDER):  # match 2XL before XL
+        if size in spec_text:
+            return size
+    return ""
+
+
+def size_sort_key(spec: str) -> int:
+    size = extract_size(spec)
+    return SIZE_RANK.get(size, 999)
 
 st.set_page_config(page_title="庫存明細", page_icon="🔎", layout="wide")
 st.title("🔎 庫存明細")
@@ -58,6 +76,13 @@ if search:
     view = view[mask]
 if low_stock:
     view = view[view["現有庫存"] <= 0]
+
+if "主貨號" in view.columns and "規格" in view.columns:
+    view = view.sort_values(
+        by=["主貨號", "規格"],
+        key=lambda col: col.map(size_sort_key) if col.name == "規格" else col,
+    )
+    view = view.reset_index(drop=True)
 
 st.dataframe(view, width='stretch', hide_index=True)
 
