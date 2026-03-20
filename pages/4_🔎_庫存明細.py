@@ -25,6 +25,14 @@ def size_sort_key(spec: str) -> int:
     size = extract_size(spec)
     return SIZE_RANK.get(size, 999)
 
+
+def extract_color(spec: str) -> str:
+    """Return the spec string with the size token removed (i.e. the colour part)."""
+    spec_text = "" if pd.isna(spec) else str(spec)
+    for size in reversed(SIZE_ORDER):  # remove 2XL before XL to avoid partial replacement
+        spec_text = spec_text.replace(size, "")
+    return spec_text.strip()
+
 st.set_page_config(page_title="庫存明細", page_icon="🔎", layout="wide")
 st.title("🔎 庫存明細")
 
@@ -78,9 +86,14 @@ if low_stock:
     view = view[view["現有庫存"] <= 0]
 
 if "主貨號" in view.columns and "規格" in view.columns:
-    view = view.sort_values(
-        by=["主貨號", "規格"],
-        key=lambda col: col.map(size_sort_key) if col.name == "規格" else col,
+    view = (
+        view
+        .assign(
+            _color=view["規格"].map(extract_color),
+            _size_rank=view["規格"].map(size_sort_key),
+        )
+        .sort_values(by=["主貨號", "_color", "_size_rank"])
+        .drop(columns=["_color", "_size_rank"])
     )
     view = view.reset_index(drop=True)
 

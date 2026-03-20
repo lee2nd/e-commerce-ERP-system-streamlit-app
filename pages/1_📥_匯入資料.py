@@ -94,7 +94,40 @@ with tab_storage:
             st.markdown("#### 預覽上傳的資料")
             st.dataframe(raw_df, width="stretch", hide_index=True)
 
-            if st.button("🚀 確認匯入入庫資料", type="primary"):
+            # ── 防呆：同貨號但品名／規格不同 ──────────────────────────
+            _dup_rows = []
+            if "貨號" in raw_df.columns and "名稱" in raw_df.columns and "規格" in raw_df.columns:
+                # 1. 檔案內部：同貨號 + 不同 名稱/規格
+                _file_map = raw_df[["貨號", "名稱", "規格"]].astype(str).drop_duplicates()
+                _dup_in_file = _file_map[_file_map.duplicated(subset=["貨號"], keep=False)].copy()
+                if not _dup_in_file.empty:
+                    _dup_in_file.insert(0, "來源", "檔案內部重複")
+                    _dup_rows.append(_dup_in_file.rename(columns={"名稱": "商品名稱"}))
+
+                # 2. 與現有入庫資料衝突：同貨號 + 不同 商品名稱/規格
+                _existing_stg = load_storage()
+                if not _existing_stg.empty:
+                    _upload_map = (
+                        raw_df[["貨號", "名稱", "規格"]].astype(str).drop_duplicates()
+                        .rename(columns={"名稱": "商品名稱"})
+                    )
+                    _exist_map = _existing_stg[["貨號", "商品名稱", "規格"]].astype(str).drop_duplicates()
+                    _merged = _upload_map.merge(_exist_map, on="貨號", suffixes=("_新", "_舊"))
+                    _conflict = _merged[
+                        (_merged["商品名稱_新"] != _merged["商品名稱_舊"]) |
+                        (_merged["規格_新"] != _merged["規格_舊"])
+                    ].copy()
+                    if not _conflict.empty:
+                        _conflict.insert(0, "來源", "與現有資料衝突")
+                        _dup_rows.append(_conflict)
+
+            _has_dup_error = bool(_dup_rows)
+            if _has_dup_error:
+                _all_dups = pd.concat(_dup_rows, ignore_index=True)
+                st.error("⚠️ 發現貨號衝突！以下貨號相同但品名／規格不同，請修正後再匯入。")
+                st.dataframe(_all_dups, width="stretch", hide_index=True)
+
+            if not _has_dup_error and st.button("🚀 確認匯入入庫資料", type="primary"):
                 # 檢查必要欄位（入庫.xlsx 格式）
                 required_cols = ["主貨號", "貨號", "名稱", "規格", "入庫數量", "單價", "金額", "入庫日期"]
                 missing = [c for c in required_cols if c not in raw_df.columns]
@@ -160,26 +193,46 @@ with tab_storage:
         if st.form_submit_button("➕ 新增"):
             if not sku:
                 sku = f"{main_sku}-{spec}" if spec else main_sku
-            total = qty * unit_cost
-            row = pd.DataFrame([{
-                "主貨號": main_sku, "貨號": sku, "商品名稱": name,
-                "規格": spec, "數量": qty, "單位成本": unit_cost,
-                "總金額": total, "入庫日期": str(stg_date),
-            }])
             existing = load_storage()
-            combined = pd.concat([existing, row], ignore_index=True)
-            # 相同 主貨號/貨號/商品名稱/規格/單位成本/入庫日期 → 合併數量與總金額
-            _keep = ["主貨號", "貨號", "商品名稱", "規格", "數量", "單位成本", "總金額", "入庫日期"]
-            _grp  = ["主貨號", "貨號", "商品名稱", "規格", "單位成本", "入庫日期"]
-            combined = (
-                combined.groupby(_grp, dropna=False, sort=False)
-                .agg(數量=("數量", "sum"), 總金額=("總金額", "sum"))
-                .reset_index()[_keep]
-            )
-            save_storage(combined)
-            st.session_state["stg_success"] = True 
-            st.rerun()
-            
+            # ── 防呆：同貨號但品名／規格不同 ──────────────────────────
+            _match = existing[existing["貨號"].astype(str) == str(sku)]
+            _form_conflict = _match[
+                (_match["商品名稱"].astype(str) != str(name)) |
+                (_match["規格"].astype(str) != str(spec))
+            ]
+            if not _form_conflict.empty:
+                _conflict_records = (
+                    _form_conflict[["貨號", "商品名稱", "規格"]]
+                    .drop_duplicates()
+                    .to_dict("records")
+                )
+                st.session_state["stg_dup_conflict"] = _conflict_records
+                st.rerun()
+            else:
+                total = qty * unit_cost
+                row = pd.DataFrame([{
+                    "主貨號": main_sku, "貨號": sku, "商品名稱": name,
+                    "規格": spec, "數量": qty, "單位成本": unit_cost,
+                    "總金額": total, "入庫日期": str(stg_date),
+                }])
+                combined = pd.concat([existing, row], ignore_index=True)
+                # 相同 主貨號/貨號/商品名稱/規格/單位成本/入庫日期 → 合併數量與總金額
+                _keep = ["主貨號", "貨號", "商品名稱", "規格", "數量", "單位成本", "總金額", "入庫日期"]
+                _grp  = ["主貨號", "貨號", "商品名稱", "規格", "單位成本", "入庫日期"]
+                combined = (
+                    combined.groupby(_grp, dropna=False, sort=False)
+                    .agg(數量=("數量", "sum"), 總金額=("總金額", "sum"))
+                    .reset_index()[_keep]
+                )
+                save_storage(combined)
+                st.session_state["stg_success"] = True
+                st.rerun()
+
+    if "stg_dup_conflict" in st.session_state:
+        _conflict_data = st.session_state.pop("stg_dup_conflict")
+        st.error("⚠️ 貨號衝突！此貨號已存在但品名／規格不同，請確認後再新增。")
+        st.dataframe(pd.DataFrame(_conflict_data), width="stretch", hide_index=True)
+
     if st.session_state.pop("stg_success", False):
         st.success("新增成功")
 
