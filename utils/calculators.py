@@ -2,7 +2,7 @@
 業務邏輯計算：對照表匹配、日報表 / 月報表 / 出庫 / 庫存明細產生。
 """
 import pandas as pd
-
+pd.set_option('future.no_silent_downcasting', True)
 
 # ══════════════════════════════════════════════════════════════
 # 對照表自動匹配（需求 5：依照貨號自動匹配商品）
@@ -509,15 +509,19 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
     order_cols = ["Order Name", "Date", "Subtotal", "Shipping Fee", "Order Discount",
                   "Credit Used", "Financial Status", "Remark",
                   "Fulfillment Service", "Fulfillment Status"]
+    
     df = df.copy()
-    # First ffill Order Name so we can group rows within the same order
+    
+    # 1. 先把 Order Name 填滿，以便後續可以正確 groupby
     if "Order Name" in df.columns:
         df["Order Name"] = df["Order Name"].ffill()
-    # Then ffill other order-level columns within each order group (not across orders)
-    for c in order_cols:
-        if c in df.columns and c != "Order Name":
-            df[c] = df.groupby("Order Name")[c].transform(lambda x: x.ffill()).infer_objects(copy=False)
-
+        
+        # 2. 找出確實存在於 df 中且不是 Order Name 的欄位
+        valid_cols = [c for c in order_cols if c in df.columns and c != "Order Name"]
+        
+        if valid_cols:
+            # 3. 一次性對所有目標欄位進行 groupby + ffill (效能更好，且不用 lambda)
+            df[valid_cols] = df.groupby("Order Name")[valid_cols].ffill()
     if "Item Name" in df.columns:
         df = df[df["Item Name"].notna() & (df["Item Name"].astype(str).str.strip() != "")]
 
