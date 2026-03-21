@@ -400,13 +400,6 @@ with tab_combo:
     combo_df = load_combo_sku()
     if not combo_df.empty:
         st.markdown("#### 目前組合貨號")
-        # 按組合貨號分組顯示
-        for combo_code in combo_df["組合貨號"].unique():
-            sub = combo_df[combo_df["組合貨號"] == combo_code]
-            parts = " + ".join(
-                f"`{r['原料貨號']}` × {int(r['原料數量'])}" for _, r in sub.iterrows()
-            )
-            st.markdown(f"**{combo_code}** = {parts}")
         st.dataframe(combo_df, width="stretch", hide_index=True)
     else:
         st.info("尚未建立組合貨號")
@@ -422,54 +415,54 @@ with tab_combo:
     st.markdown("---")
     st.subheader("新增組合貨號")
 
-    # ➕/➖ 用 on_click callback，避免雙重 rerun
-    if "combo_material_count" not in st.session_state:
-        st.session_state["combo_material_count"] = 1
-
-    def _combo_add_row():
-        st.session_state["combo_material_count"] += 1
-
-    def _combo_remove_row():
-        if st.session_state["combo_material_count"] > 1:
-            st.session_state["combo_material_count"] -= 1
-
-    _count = st.session_state["combo_material_count"]
-
-    bc1, bc2 = st.columns(2)
-    bc1.button("➕ 增加一筆原料", key="combo_add_row", on_click=_combo_add_row)
-    if _count > 1:
-        bc2.button("➖ 移除最後一筆", key="combo_remove_row", on_click=_combo_remove_row)
-
-    # 所有輸入欄位放進 form，避免 text_input 失去焦點就 rerun
+    # 使用 st.form 包裝，配合 data_editor 動態表格
     with st.form("new_combo_form", clear_on_submit=True):
         combo_code_input = st.text_input("組合貨號")
-        st.markdown("**原料列表：**")
-        material_rows = []
-        for i in range(_count):
-            mc1, mc2 = st.columns([3, 1])
-            m_sku = mc1.text_input(f"原料貨號 #{i+1}", key=f"combo_form_mat_sku_{i}")
-            m_qty = mc2.number_input(f"數量 #{i+1}", min_value=1, value=1, key=f"combo_form_mat_qty_{i}")
-            material_rows.append((m_sku, m_qty))
+        
+        st.markdown("**原料列表（可直接在表格下方點擊 ➕ 新增列，或選取左側勾選框刪除）：**")
+        
+        # 預設給定一列空白讓使用者填寫
+        default_materials = pd.DataFrame([{"原料貨號": "", "原料數量": 1}])
+        
+        # 使用 data_editor 達到客戶端動態新增/刪除，不會觸發 rerun
+        edited_materials = st.data_editor(
+            default_materials,
+            num_rows="dynamic", # 允許動態新增/刪除資料列
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "原料貨號": st.column_config.TextColumn("原料貨號", required=True),
+                "原料數量": st.column_config.NumberColumn("原料數量", min_value=1, step=1, required=True),
+            }
+        )
+        
         submitted = st.form_submit_button("💾 儲存組合貨號", type="primary")
 
     if submitted:
         if not combo_code_input.strip():
             st.error("請輸入組合貨號")
         else:
-            valid_materials = [(sku, qty) for sku, qty in material_rows if sku.strip()]
-            if not valid_materials:
+            # 清理資料：過濾掉未填寫的空行
+            valid_materials = edited_materials[edited_materials["原料貨號"].fillna("").str.strip() != ""]
+            
+            if valid_materials.empty:
                 st.error("請至少輸入一筆原料貨號")
             else:
-                new_rows = pd.DataFrame([
-                    {"組合貨號": combo_code_input.strip(), "原料貨號": sku.strip(), "原料數量": int(qty)}
-                    for sku, qty in valid_materials
-                ])
+                # 建立要新增的 DataFrame
+                new_rows = pd.DataFrame({
+                    "組合貨號": combo_code_input.strip(),
+                    "原料貨號": valid_materials["原料貨號"].str.strip(),
+                    "原料數量": valid_materials["原料數量"].astype(int)
+                })
+                
                 existing = load_combo_sku()
                 if not existing.empty:
+                    # 若已存在相同組合貨號，先移除舊的，以新的覆蓋
                     existing = existing[existing["組合貨號"] != combo_code_input.strip()]
+                    
                 combined = pd.concat([existing, new_rows], ignore_index=True)
                 save_combo_sku(combined)
-                st.session_state["combo_material_count"] = 1
+                
                 st.session_state["combo_add_success"] = True
                 st.rerun()
 
