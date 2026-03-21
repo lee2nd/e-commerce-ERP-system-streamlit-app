@@ -428,7 +428,7 @@ with tab_combo:
         edited_materials = st.data_editor(
             default_materials,
             num_rows="dynamic", # 允許動態新增/刪除資料列
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             column_config={
                 "原料貨號": st.column_config.TextColumn("原料貨號", required=True),

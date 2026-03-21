@@ -170,7 +170,7 @@ for _c in money_cols:
 edited_df = st.data_editor(
     view_edit,
     key="daily_editor",
-    use_container_width=True,
+    width='stretch',
     hide_index=True,
     num_rows="fixed",
     height=500,
