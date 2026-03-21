@@ -262,17 +262,20 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         if not oid:
             continue
 
-        # 訂單狀態
         ret_stat = _s(row.get("退貨 / 退款狀態", ""))
         if not_established and "遺失" in not_established:
-            status = "遺失賠償"   # 不成立原因含「遺失」→ 遺失賠償（計算同已完成）
+            _row_status = "遺失賠償"
         elif ret_stat:
-            status = "退貨"       # 退貨 / 退款狀態非空 → 退貨
+            _row_status = "退貨"
         else:
-            status = "已完成"
+            _row_status = "已完成"
 
         sku = _s(row.get("商品選項貨號", "")) or _s(row.get("主商品貨號", ""))
         qty = int(_n(row.get("數量", 0)))
+        # 退貨數量：計算實際有效數量
+        return_qty = int(_n(row.get("退貨數量", 0)))
+        effective_qty = max(0, qty - return_qty)
+
         raw_act = row.get("商品活動價格")
         act_p_raw = pd.to_numeric(str(raw_act), errors="coerce") if raw_act is not None else None
         act_p = float(act_p_raw) if act_p_raw is not None and pd.notna(act_p_raw) else None
@@ -280,19 +283,28 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         price = act_p if act_p is not None else orig_p
 
         stg_info = stg.get(sku, {})
-        item_cost = stg_info.get("成本", 0) * qty if stg_info else 0
-        items = _expand_items_for_combo(sku, qty, stg, combo_df)
-        # For non-combo single items, prefer platform name/spec when stg_info is absent
-        if len(items) == 1 and not stg_info:
-            items[0]["名稱"] = items[0]["名稱"] or _s(row.get("商品名稱", ""))
-            items[0]["規格"] = items[0]["規格"] or _s(row.get("商品選項名稱", ""))
+
+        # items_eff：有效數量（用於部份退貨的金額與庫存計算）
+        items_eff = _expand_items_for_combo(sku, effective_qty, stg, combo_df) if effective_qty > 0 else []
+        if items_eff and len(items_eff) == 1 and not stg_info:
+            items_eff[0]["名稱"] = items_eff[0]["名稱"] or _s(row.get("商品名稱", ""))
+            items_eff[0]["規格"] = items_eff[0]["規格"] or _s(row.get("商品選項名稱", ""))
+
+        # items_orig：原始數量（整單退貨時仍顯示商品名稱以供識別）
+        items_orig = _expand_items_for_combo(sku, qty, stg, combo_df)
+        if len(items_orig) == 1 and not stg_info:
+            items_orig[0]["名稱"] = items_orig[0]["名稱"] or _s(row.get("商品名稱", ""))
+            items_orig[0]["規格"] = items_orig[0]["規格"] or _s(row.get("商品選項名稱", ""))
 
         records.append({
             "_oid": oid, "_date": _s(row.get("訂單成立日期", ""))[:10],
-            "_status": status,
-            "_items": items,
-            "_line_amt": price * qty,
-            "_item_cost": item_cost,
+            "_row_status": _row_status,
+            "_has_ret": bool(ret_stat),        # 此列是否有退貨狀態
+            "_effective_qty": effective_qty,   # 有效成交數量
+            "_items_eff": items_eff,           # 有效數量商品（部份退貨）
+            "_items_orig": items_orig,         # 原始数量商品（整單退貨顯示用）
+            "_line_amt": price * effective_qty,
+            "_item_cost": stg_info.get("成本", 0) * effective_qty if stg_info else 0,
             "_matched": bool(stg_info),
             # order-level (take first per order)
             "_coupon": abs(_n(row.get("賣場優惠券", 0))),
@@ -305,31 +317,58 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         })
 
     result = []
-    # group by order
     from itertools import groupby as _groupby
     records.sort(key=lambda x: x["_oid"])
     for oid, grp in _groupby(records, key=lambda x: x["_oid"]):
         rows = list(grp)
         f = rows[0]
-        status = f["_status"]
-        is_ret = status == "退貨"
 
-        total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
-        total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
+        any_ret = any(r["_has_ret"] for r in rows)
+        # 整單退貨：所有商品列都有退貨且有效數量均為 0
+        is_full_ret = any_ret and all(r["_effective_qty"] == 0 for r in rows)
+        # 部份退貨：有部分商品退貨但仍有有效數量
+        is_partial_ret = any_ret and not is_full_ret
 
-        coupon = f["_coupon"]
+        if any_ret:
+            status = "退貨"
+        else:
+            status = f["_row_status"]  # 已完成 or 遺失賠償
+
+        ret_ship = f["_return_ship"] if any_ret else 0
         buyer_ship = f["_buyer_ship"]
         plat_ship = f["_plat_ship"]
-        ret_ship = f["_return_ship"] if is_ret else 0
-        tx_fee = f["_tx_fee"] if not is_ret else 0
-        svc_fee = f["_svc_fee"] if not is_ret else 0
-        pay_fee = f["_pay_fee"] if not is_ret else 0
-        
+
+        if is_full_ret:
+            # 整單退貨：金額與商品成本歸零，只計退貨運費
+            total_amt = 0
+            total_cost_item = 0
+            coupon = 0
+            tx_fee = 0
+            svc_fee = 0
+            pay_fee = 0
+            display_items = [it for r in rows for it in r["_items_orig"]]
+            is_matched = any(r["_matched"] for r in rows)
+        else:
+            # 已完成 / 遺失賠償 / 部份退貨：以有效數量計算
+            total_amt = sum(r["_line_amt"] for r in rows)
+            total_cost_item = sum(r["_item_cost"] for r in rows)
+            coupon = f["_coupon"]
+            tx_fee = f["_tx_fee"]
+            svc_fee = f["_svc_fee"]
+            pay_fee = f["_pay_fee"]
+            if is_partial_ret:
+                # 只顯示有效成交的商品
+                display_items = [it for r in rows for it in r["_items_eff"]]
+                is_matched = any(r["_matched"] and r["_effective_qty"] > 0 for r in rows)
+            else:
+                display_items = [it for r in rows for it in r["_items_orig"]]
+                is_matched = any(r["_matched"] for r in rows)
+
         # 總成本：商品成本＋折扣優惠＋退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
         total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
         profit = total_amt - total_cost
 
-        item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
+        item_name_str, sku_str = _build_item_strings(display_items)
         result.append({
             "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
             "商品名稱": item_name_str, "貨號": sku_str,
@@ -347,7 +386,7 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             "商品成本": round(total_cost_item, 0),
             "總成本": round(total_cost, 0),
             "淨利": round(profit, 0),
-            "備註": "" if any(r["_matched"] for r in rows) else "未匹配", "平台": "蝦皮",
+            "備註": "" if is_matched else "未匹配", "平台": "蝦皮",
         })
     return result
 
@@ -386,7 +425,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
         # 其他服務費：單價 × 數量 × 5%，四捨五入，最低1，最高300
         svc_fee_line = max(1, min(round(price * qty * 0.05), 300))
 
-        ship_method = _s(row.get("運送方式", ""))
+        ship_method = _s(row.get("運送方式", "")) or _s(row.get("付款方式", ""))
         actual_ship = _ruten_logistics(ship_method, settings)
         buyer_ship = _n(row.get("運費", 0))
         ruten_disc = abs(_n(row.get("露天折扣碼金額", 0)))
@@ -468,11 +507,16 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
 
     # forward-fill order-level columns
     order_cols = ["Order Name", "Date", "Subtotal", "Shipping Fee", "Order Discount",
-                  "Credit Used", "Financial Status", "Remark"]
+                  "Credit Used", "Financial Status", "Remark",
+                  "Fulfillment Service", "Fulfillment Status"]
     df = df.copy()
+    # First ffill Order Name so we can group rows within the same order
+    if "Order Name" in df.columns:
+        df["Order Name"] = df["Order Name"].ffill()
+    # Then ffill other order-level columns within each order group (not across orders)
     for c in order_cols:
-        if c in df.columns:
-            df[c] = df[c].ffill()
+        if c in df.columns and c != "Order Name":
+            df[c] = df.groupby("Order Name")[c].transform(lambda x: x.ffill()).infer_objects(copy=False)
 
     if "Item Name" in df.columns:
         df = df[df["Item Name"].notna() & (df["Item Name"].astype(str).str.strip() != "")]
@@ -481,6 +525,12 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
     for _, row in df.iterrows():
         oid = _s(row.get("Order Name", ""))
         if not oid:
+            continue
+
+        # 出貨前取消：Fulfillment Service 空 且 Fulfillment Status == "Restocked" → 跳過
+        fulfill_svc = _s(row.get("Fulfillment Service", ""))
+        fulfill_stat = _s(row.get("Fulfillment Status", ""))
+        if not fulfill_svc and fulfill_stat == "Restocked":
             continue
 
         remark = _s(row.get("Remark", ""))

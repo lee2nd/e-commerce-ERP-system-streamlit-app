@@ -76,14 +76,35 @@ if not compare.empty:
         }
 
 
+def _n(val, default=0):
+    """Safe numeric conversion"""
+    try:
+        v = pd.to_numeric(val, errors="coerce")
+        return float(v) if pd.notna(v) else default
+    except Exception:
+        return default
+
+
 def _filter_shopee(df: pd.DataFrame) -> pd.DataFrame:
-    """蝦皮：不成立原因、退貨 / 退款狀態 欄位有內容就跳過"""
+    """跑皮：過濾完全退貨的商品列，保留有效成交的列"""
     if df.empty:
         return df
     mask = pd.Series(True, index=df.index)
     if "不成立原因" in df.columns:
-        mask &= df["不成立原因"].fillna("").astype(str).str.strip() == ""
-    if "退貨 / 退款狀態" in df.columns:
+        # 有不成立原因且不含「遺失」→ 跳過
+        mask &= (
+            df["不成立原因"].fillna("").astype(str).str.strip() == ""
+        ) | df["不成立原因"].fillna("").astype(str).str.contains("遺失", na=False)
+    if "退貨 / 退款狀態" in df.columns and "數量" in df.columns and "退貨數量" in df.columns:
+        ret_stat = df["退貨 / 退款狀態"].fillna("").astype(str).str.strip()
+        qty = pd.to_numeric(df["數量"], errors="coerce").fillna(0)
+        ret_qty = pd.to_numeric(df["退貨數量"], errors="coerce").fillna(0)
+        effective_qty = (qty - ret_qty).clip(lower=0)
+        # 有退貨狀態 且 有效數量 == 0 → 跳過（完全退貨）
+        fully_returned = (ret_stat != "") & (effective_qty == 0)
+        mask &= ~fully_returned
+    elif "退貨 / 退款狀態" in df.columns:
+        # 沒有退貨數量欄→ 原邀輯
         mask &= df["退貨 / 退款狀態"].fillna("").astype(str).str.strip() == ""
     return df[mask].copy()
 
@@ -99,13 +120,25 @@ def _filter_ruten(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _filter_easystore(df: pd.DataFrame) -> pd.DataFrame:
-    """官網：Remark 欄位為「取消訂購」視為退貨，跳過不出庫"""
+    """官網：出貨前取消 (Fulfillment Service空+Restocked) 或 取消訂購 → 跳過不出庫"""
     if df.empty:
-        return df
-    if "Remark" not in df.columns:
         return df.copy()
-    mask = df["Remark"].fillna("").astype(str).str.strip() != "取消訂購"
-    return df[mask].copy()
+    _df = df.copy()
+    # forward-fill order-level fields for filtering
+    for c in ["Remark", "Fulfillment Service", "Fulfillment Status"]:
+        if c in _df.columns:
+            _df[c] = _df[c].ffill()
+    mask = pd.Series(True, index=_df.index)
+    # 出貨前取消：Fulfillment Service 空 且 Fulfillment Status == Restocked
+    if "Fulfillment Service" in _df.columns and "Fulfillment Status" in _df.columns:
+        is_prestocked = (
+            _df["Fulfillment Service"].fillna("").astype(str).str.strip() == ""
+        ) & (_df["Fulfillment Status"].fillna("").astype(str) == "Restocked")
+        mask &= ~is_prestocked
+    # 取消訂購（未取貨）→ 不出庫
+    if "Remark" in _df.columns:
+        mask &= _df["Remark"].fillna("").astype(str).str.strip() != "取消訂購"
+    return _df[mask].copy()
 
 
 def _build_platform_key(row: pd.Series, platform: str) -> str:
@@ -128,9 +161,12 @@ def _build_platform_key(row: pd.Series, platform: str) -> str:
 
 def _get_order_data(row: pd.Series, platform: str) -> dict:
     """從訂單取得數量、單價、日期"""
+    ret_qty = 0  # 僅蝦皮部份退貨時使用
     if platform == "蝦皮":
         qty = row.get("數量", 0)
-        # 優先用商品活動價格，沒有則用商品原價
+        # 部份退貨：使用有效數量
+        ret_qty_raw = row.get("退貨數量", 0)
+        ret_qty = int(_n(ret_qty_raw)) if pd.notna(ret_qty_raw) else 0
         price = row.get("商品活動價格") if pd.notna(row.get("商品活動價格")) else row.get("商品原價", 0)
         date = str(row.get("訂單成立日期", ""))[:10]
     elif platform == "露天":
@@ -149,6 +185,8 @@ def _get_order_data(row: pd.Series, platform: str) -> dict:
         qty = int(qty) if pd.notna(qty) else 0
     except (ValueError, TypeError):
         qty = 0
+    if platform == "蝦皮":
+        qty = max(0, qty - ret_qty)
     try:
         price = float(price) if pd.notna(price) else 0
     except (ValueError, TypeError):
