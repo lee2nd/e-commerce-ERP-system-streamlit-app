@@ -71,6 +71,7 @@ daily["日期"] = pd.to_datetime(daily["日期"], errors="coerce")
 # 舊資料回填備註「未匹配」
 if "備註" not in daily.columns:
     daily["備註"] = ""
+daily["備註"] = daily["備註"].fillna("").astype(str)
 if "商品成本" in daily.columns and "商品名稱" in daily.columns:
     _need_fill = (
         (daily["備註"].fillna("").astype(str).str.strip() == "") &
