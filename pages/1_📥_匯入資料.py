@@ -8,6 +8,7 @@ from utils.data_manager import (
     load_compare_table, save_compare_table,
     load_platform_orders, append_platform_orders,
     clear_storage, clear_platform_orders,
+    load_combo_sku, save_combo_sku, clear_combo_sku,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
 from utils.calculators import auto_match_compare_table
@@ -47,7 +48,7 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════
 # Tab 切換
 # ══════════════════════════════════════════════════════════════
-tab_storage, tab_order = st.tabs(["📥 匯入入庫資料", "📦 匯入平台訂單"])
+tab_storage, tab_order, tab_combo = st.tabs(["📥 匯入入庫資料", "📦 匯入平台訂單", "🔗 組合貨號"])
 
 # ══════════════════════════════════════════════════════════════
 # Tab 1 – 匯入入庫資料
@@ -349,7 +350,7 @@ with tab_order:
                 # 自動更新對照表
                 stg = load_storage()
                 compare = load_compare_table()
-                updated = auto_match_compare_table(new, stg, compare)
+                updated = auto_match_compare_table(new, stg, compare, load_combo_sku())
                 save_compare_table(updated)
                 st.session_state["order_upload_success"] = len(new)
                 st.rerun()
@@ -383,4 +384,126 @@ with tab_order:
             st.rerun()
         if _c2.button("❌ 取消", key="confirm_clear_orders_no"):
             st.session_state.pop("confirm_clear_orders", None)
+            st.rerun()
+
+# ══════════════════════════════════════════════════════════════
+# Tab 3 – 組合貨號
+# ══════════════════════════════════════════════════════════════
+with tab_combo:
+    st.subheader("🔗 組合貨號管理")
+    st.markdown(
+        "組合商品由多組原料貨號組成，例如：`YGK03002-RDL30-RR-DIY` = `YGJ03002-RDL × 30` + `YGK03002-RR × 1`\n\n"
+        "出庫時系統會自動扣除各原料貨號的庫存數量。"
+    )
+
+    # ── 顯示現有組合貨號 ──
+    combo_df = load_combo_sku()
+    if not combo_df.empty:
+        st.markdown("#### 目前組合貨號")
+        # 按組合貨號分組顯示
+        for combo_code in combo_df["組合貨號"].unique():
+            sub = combo_df[combo_df["組合貨號"] == combo_code]
+            parts = " + ".join(
+                f"`{r['原料貨號']}` × {int(r['原料數量'])}" for _, r in sub.iterrows()
+            )
+            st.markdown(f"**{combo_code}** = {parts}")
+        st.dataframe(combo_df, width="stretch", hide_index=True)
+    else:
+        st.info("尚未建立組合貨號")
+
+    if st.session_state.pop("combo_add_success", False):
+        st.success("✅ 組合貨號新增成功")
+    if st.session_state.pop("combo_del_success", False):
+        st.success("✅ 組合貨號刪除成功")
+    if st.session_state.pop("combo_del_notfound", False):
+        st.warning("找不到該組合貨號")
+
+    # ── 新增組合貨號 ──
+    st.markdown("---")
+    st.subheader("新增組合貨號")
+
+    # ➕/➖ 用 on_click callback，避免雙重 rerun
+    if "combo_material_count" not in st.session_state:
+        st.session_state["combo_material_count"] = 1
+
+    def _combo_add_row():
+        st.session_state["combo_material_count"] += 1
+
+    def _combo_remove_row():
+        if st.session_state["combo_material_count"] > 1:
+            st.session_state["combo_material_count"] -= 1
+
+    _count = st.session_state["combo_material_count"]
+
+    bc1, bc2 = st.columns(2)
+    bc1.button("➕ 增加一筆原料", key="combo_add_row", on_click=_combo_add_row)
+    if _count > 1:
+        bc2.button("➖ 移除最後一筆", key="combo_remove_row", on_click=_combo_remove_row)
+
+    # 所有輸入欄位放進 form，避免 text_input 失去焦點就 rerun
+    with st.form("new_combo_form", clear_on_submit=True):
+        combo_code_input = st.text_input("組合貨號")
+        st.markdown("**原料列表：**")
+        material_rows = []
+        for i in range(_count):
+            mc1, mc2 = st.columns([3, 1])
+            m_sku = mc1.text_input(f"原料貨號 #{i+1}", key=f"combo_form_mat_sku_{i}")
+            m_qty = mc2.number_input(f"數量 #{i+1}", min_value=1, value=1, key=f"combo_form_mat_qty_{i}")
+            material_rows.append((m_sku, m_qty))
+        submitted = st.form_submit_button("💾 儲存組合貨號", type="primary")
+
+    if submitted:
+        if not combo_code_input.strip():
+            st.error("請輸入組合貨號")
+        else:
+            valid_materials = [(sku, qty) for sku, qty in material_rows if sku.strip()]
+            if not valid_materials:
+                st.error("請至少輸入一筆原料貨號")
+            else:
+                new_rows = pd.DataFrame([
+                    {"組合貨號": combo_code_input.strip(), "原料貨號": sku.strip(), "原料數量": int(qty)}
+                    for sku, qty in valid_materials
+                ])
+                existing = load_combo_sku()
+                if not existing.empty:
+                    existing = existing[existing["組合貨號"] != combo_code_input.strip()]
+                combined = pd.concat([existing, new_rows], ignore_index=True)
+                save_combo_sku(combined)
+                st.session_state["combo_material_count"] = 1
+                st.session_state["combo_add_success"] = True
+                st.rerun()
+
+    # ── 刪除組合貨號 ──
+    st.markdown("---")
+    st.subheader("刪除組合貨號")
+    with st.form("del_combo", clear_on_submit=True):
+        del_combo_code = st.text_input("要刪除的組合貨號")
+        if st.form_submit_button("🗑️ 刪除"):
+            if not del_combo_code:
+                st.warning("請輸入組合貨號")
+            else:
+                existing = load_combo_sku()
+                if existing.empty or del_combo_code not in existing["組合貨號"].values:
+                    st.session_state["combo_del_notfound"] = True
+                else:
+                    updated = existing[existing["組合貨號"] != del_combo_code].reset_index(drop=True)
+                    save_combo_sku(updated)
+                    st.session_state["combo_del_success"] = True
+                st.rerun()
+
+    # ── 清除所有組合貨號 ──
+    st.markdown("---")
+    if st.button("🗑️ 清除所有組合貨號", key="clear_combo_btn"):
+        st.session_state["confirm_clear_combo"] = True
+    if st.session_state.get("confirm_clear_combo"):
+        st.warning("⚠️ 確定要清除所有組合貨號資料嗎？此操作無法復原！")
+        _c1, _c2 = st.columns(2)
+        if _c1.button("✅ 確認清除", key="confirm_clear_combo_yes", type="primary"):
+            with st.spinner("清除中…"):
+                clear_combo_sku()
+            st.session_state.pop("confirm_clear_combo", None)
+            st.success("✅ 組合貨號已清除")
+            st.rerun()
+        if _c2.button("❌ 取消", key="confirm_clear_combo_no"):
+            st.session_state.pop("confirm_clear_combo", None)
             st.rerun()

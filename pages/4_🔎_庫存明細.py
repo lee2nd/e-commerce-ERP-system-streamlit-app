@@ -5,6 +5,7 @@ from utils.data_manager import (
     load_compare_table,
     load_inventory_details, save_inventory_details,
     clear_inventory_details,
+    load_combo_sku,
 )
 from utils.calculators import generate_inventory_details
 
@@ -40,10 +41,11 @@ if st.button("🔄 更新庫存明細", type="primary"):
     storage  = load_storage()
     delivery = load_delivery()
     compare  = load_compare_table()
+    combo    = load_combo_sku()
     if storage.empty:
         st.warning("請先至「匯入資料」頁面新增入庫資料")
     else:
-        result = generate_inventory_details(storage, delivery)
+        result = generate_inventory_details(storage, delivery, combo)
         # 過濾掉對照表內未匹配的項目（入庫品名為空或"未匹配"）
         if not compare.empty and "貨號" in compare.columns and "入庫品名" in compare.columns:
             matched_skus = set(

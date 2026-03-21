@@ -11,6 +11,7 @@ def auto_match_compare_table(
     orders_df: pd.DataFrame,
     storage_df: pd.DataFrame | None = None,
     existing_compare_df: pd.DataFrame | None = None,
+    combo_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if orders_df.empty:
         return existing_compare_df if existing_compare_df is not None else pd.DataFrame()
@@ -41,6 +42,16 @@ def auto_match_compare_table(
             lambda r: f"{r['商品名稱']}[{r['規格']}]" if r["規格"] else r["商品名稱"], axis=1
         )
         stg_name_map = nm.set_index("貨號")["_label"].to_dict()
+
+    # ── 組合貨號 → 入庫品名 的映射 ──
+    if combo_df is not None and not combo_df.empty:
+        for combo_code in combo_df["組合貨號"].unique():
+            if combo_code not in stg_name_map:
+                sub = combo_df[combo_df["組合貨號"] == combo_code]
+                parts = " + ".join(
+                    f"{r['原料貨號']}×{int(r['原料數量'])}" for _, r in sub.iterrows()
+                )
+                stg_name_map[combo_code] = f"組合:{parts}"
 
     def _enrich(df: pd.DataFrame) -> pd.DataFrame:        
         df = df.merge(sku_src, on=["平台商品名稱", "平台"], how="left")
@@ -136,7 +147,7 @@ def generate_delivery(
 # 日報表
 # ══════════════════════════════════════════════════════════════
 
-def _build_stg_lookup(storage_df: pd.DataFrame) -> dict:
+def _build_stg_lookup(storage_df: pd.DataFrame, combo_df: pd.DataFrame | None = None) -> dict:
     """貨號 → {名稱, 規格, 主貨號, 成本} using average cost"""
     if storage_df.empty:
         return {}
@@ -150,6 +161,23 @@ def _build_stg_lookup(storage_df: pd.DataFrame) -> dict:
                 "規格": str(r.get("規格", "")).strip(),
                 "主貨號": str(r.get("主貨號", "")).strip(),
                 "成本": float(avg_cost.get(sku, 0) or 0),
+            }
+    # 組合貨號：成本 = 各原料成本 × 數量 之總和
+    if combo_df is not None and not combo_df.empty:
+        for combo_code in combo_df["組合貨號"].unique():
+            sub = combo_df[combo_df["組合貨號"] == combo_code]
+            total_cost = sum(
+                lookup.get(str(r["原料貨號"]).strip(), {}).get("成本", 0) * int(r["原料數量"])
+                for _, r in sub.iterrows()
+            )
+            parts = " + ".join(
+                f"{r['原料貨號']}×{int(r['原料數量'])}" for _, r in sub.iterrows()
+            )
+            lookup[combo_code] = {
+                "名稱": f"組合:{parts}",
+                "規格": "",
+                "主貨號": combo_code.split("-")[0] if "-" in combo_code else combo_code,
+                "成本": total_cost,
             }
     return lookup
 
@@ -511,6 +539,7 @@ def generate_daily_report(
     compare_df: pd.DataFrame,
     storage_df: pd.DataFrame,
     settings: dict,
+    combo_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Generate daily report from raw platform DataFrames.
@@ -518,7 +547,7 @@ def generate_daily_report(
       ruten_7_11, ruten_family, ruten_ok, ruten_laerfu, ruten_post,
       ruten_default_shipping, easystore_shipping
     """
-    stg = _build_stg_lookup(storage_df)
+    stg = _build_stg_lookup(storage_df, combo_df)
 
     all_records = (
         _process_shopee(shopee_raw, stg)
@@ -611,13 +640,55 @@ def generate_inventory(
 # ══════════════════════════════════════════════════════════════
 # 庫存明細（對應 VBA InventoryDetails）
 # ══════════════════════════════════════════════════════════════
+def _expand_combo_delivery(delivery_df: pd.DataFrame, combo_df: pd.DataFrame) -> pd.DataFrame:
+    """將出庫中的組合貨號展開為原料貨號明細，非組合貨號的記錄保持不變。"""
+    if delivery_df.empty or combo_df.empty:
+        return delivery_df
+
+    combo_set = set(combo_df["組合貨號"].astype(str).str.strip().unique())
+    qty_col = "出庫數量" if "出庫數量" in delivery_df.columns else "數量"
+
+    normal_rows = delivery_df[~delivery_df["貨號"].astype(str).str.strip().isin(combo_set)]
+    combo_rows = delivery_df[delivery_df["貨號"].astype(str).str.strip().isin(combo_set)]
+
+    if combo_rows.empty:
+        return delivery_df
+
+    expanded = []
+    for _, row in combo_rows.iterrows():
+        combo_code = str(row["貨號"]).strip()
+        order_qty = int(row[qty_col]) if pd.notna(row[qty_col]) else 0
+        components = combo_df[combo_df["組合貨號"].astype(str).str.strip() == combo_code]
+        for _, comp in components.iterrows():
+            mat_sku = str(comp["原料貨號"]).strip()
+            mat_qty = int(comp["原料數量"])
+            new_row = row.copy()
+            new_row["貨號"] = mat_sku
+            new_row[qty_col] = order_qty * mat_qty
+            new_row["金額"] = 0  # 組合原料不計金額（由組合本身計）
+            # 更新 主貨號 為原料自身的主貨號
+            if "主貨號" in new_row.index:
+                new_row["主貨號"] = mat_sku.split("-")[0] if "-" in mat_sku else mat_sku
+            expanded.append(new_row)
+
+    if expanded:
+        expanded_df = pd.DataFrame(expanded)
+        return pd.concat([normal_rows, expanded_df], ignore_index=True)
+    return normal_rows.reset_index(drop=True)
+
+
 def generate_inventory_details(
     storage_df: pd.DataFrame,
     delivery_df: pd.DataFrame,
+    combo_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """依入庫/出庫 xlsx 欄位產生庫存明細，對應 VBA InventoryDetails.vba 邏輯。"""
     if storage_df.empty:
         return pd.DataFrame()
+
+    # 組合貨號展開：將出庫中的組合貨號拆為原料貨號
+    if combo_df is not None and not combo_df.empty:
+        delivery_df = _expand_combo_delivery(delivery_df, combo_df)
 
     # 相容 load_storage() 轉換後的欄位名稱
     name_col   = "商品名稱" if "商品名稱" in storage_df.columns else "名稱"

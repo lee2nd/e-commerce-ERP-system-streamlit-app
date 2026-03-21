@@ -357,3 +357,24 @@ def clear_inventory_details():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "庫存明細.xlsx", "chore: clear 庫存明細.xlsx")
+
+
+# ══════════════════════════════════════════════════════════════
+# 組合貨號（組合貨號.xlsx）
+# ══════════════════════════════════════════════════════════════
+
+def load_combo_sku() -> pd.DataFrame:
+    return _load_excel("組合貨號.xlsx")
+
+
+def save_combo_sku(df: pd.DataFrame):
+    _save_excel(df, "組合貨號.xlsx", "chore: update 組合貨號.xlsx")
+
+
+def clear_combo_sku():
+    """清空組合貨號，保留欄位結構。"""
+    cols = ["組合貨號", "原料貨號", "原料數量"]
+    existing = _load_excel("組合貨號.xlsx")
+    if not existing.empty:
+        cols = list(existing.columns)
+    _save_excel(pd.DataFrame(columns=cols), "組合貨號.xlsx", "chore: clear 組合貨號.xlsx")

@@ -6,6 +6,7 @@ from utils.data_manager import (
     load_storage,
     load_platform_orders,
     clear_compare_table,
+    load_combo_sku,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore
 from utils.calculators import auto_match_compare_table
@@ -15,6 +16,29 @@ st.title("📋 對照表")
 
 compare = load_compare_table()
 storage = load_storage()
+combo = load_combo_sku()
+
+# 建立 組合貨號 → 原料名稱說明 lookup（用於在對照表顯示組合內容）
+combo_detail_map: dict[str, str] = {}
+if not combo.empty and not storage.empty:
+    name_col = "商品名稱" if "商品名稱" in storage.columns else "名稱"
+    stg_name_lookup = (
+        storage.drop_duplicates("貨號")
+        .set_index("貨號")
+        .apply(
+            lambda r: f"{r.get(name_col, '')} {r.get('規格', '')}".strip(),
+            axis=1,
+        )
+        .to_dict()
+    )
+    for combo_code, grp in combo.groupby("組合貨號"):
+        parts = []
+        for _, comp in grp.iterrows():
+            mat_sku = str(comp["原料貨號"]).strip()
+            mat_qty = int(comp["原料數量"])
+            mat_name = stg_name_lookup.get(mat_sku, mat_sku)
+            parts.append(f"{mat_name} ×{mat_qty}")
+        combo_detail_map[str(combo_code)] = " + ".join(parts)
 
 # 統計
 if not compare.empty:
@@ -47,7 +71,7 @@ if st.button("🔄 重新掃描訂單（新增未匹配項目）", type="primary
     if orders.empty:
         st.warning("無訂單資料可匹配，請先至首頁匯入平台訂單")
     else:
-        updated = auto_match_compare_table(orders, storage, compare)
+        updated = auto_match_compare_table(orders, storage, compare, load_combo_sku())
         # 依平台排序
         _plat_order = {"蝦皮": 0, "露天": 1, "官網": 2}
         updated["_sort"] = updated["平台"].map(_plat_order).fillna(9)
@@ -59,7 +83,7 @@ if st.button("🔄 重新掃描訂單（新增未匹配項目）", type="primary
 # 顯示對照表
 if not compare.empty:
     filter_opt = st.radio(
-        "篩選狀態", ["全部", "未匹配", "已匹配"],
+        "篩選狀態", ["全部", "未匹配", "已匹配", "組合貨號"],
         horizontal=True, key="cmp_filter",
         label_visibility="collapsed",
     )
@@ -73,11 +97,27 @@ if not compare.empty:
         view = view[view["入庫品名"].astype(str) == "未匹配"]
     elif filter_opt == "已匹配":
         view = view[~view["入庫品名"].astype(str).isin(["", "未匹配"])]
+    elif filter_opt == "組合貨號":
+        view = view[view["入庫品名"].astype(str).str.startswith("組合:")]
 
     if view.empty:
         st.info("沒有符合條件的項目")
     else:
         _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
+
+        # 建立顯示用的 入庫品名 欄位：組合商品顯示 [組合] 並附上原料名稱
+        def _format_stg_name(row):
+            val = str(row.get("入庫品名", ""))
+            if val.startswith("組合:"):
+                combo_code = str(row.get("貨號", "")).strip()
+                detail = combo_detail_map.get(combo_code, "")
+                if detail:
+                    return f"[組合] {detail}"
+                return "[組合]"
+            return val
+
+        view = view.copy()
+        view["入庫品名_顯示"] = view.apply(_format_stg_name, axis=1)
 
         def _highlight_platform(row):
             color = _PLAT_COLORS.get(row["平台"], "")
@@ -89,10 +129,17 @@ if not compare.empty:
         def _highlight_unmatched(val):
             return "color: red" if val == "未匹配" else ""
 
+        def _highlight_combo(val):
+            return "color: #8B5CF6; font-weight: bold" if str(val).startswith("[組合]") else ""
+
+        display_view = view[["平台", "平台商品名稱", "貨號", "主貨號", "入庫品名_顯示"]].rename(
+            columns={"入庫品名_顯示": "入庫品名"}
+        )
         styled_view = (
-            view[["平台", "平台商品名稱", "貨號", "主貨號", "入庫品名"]]
+            display_view
             .style.apply(_highlight_platform, axis=1)
             .map(_highlight_unmatched, subset=["入庫品名"])
+            .map(_highlight_combo, subset=["入庫品名"])
         )
         st.dataframe(styled_view, width='stretch', hide_index=True)
 

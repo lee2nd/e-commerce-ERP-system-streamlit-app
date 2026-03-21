@@ -5,6 +5,7 @@ from utils.data_manager import (
     load_platform_orders,
     load_compare_table, load_storage,
     load_daily_report, save_daily_report, clear_daily_report,
+    load_combo_sku,
 )
 from utils.calculators import generate_daily_report
 
@@ -35,7 +36,7 @@ if st.button("🔄 重新產生日報表", type="primary"):
         with st.spinner("計算中…"):
             daily = generate_daily_report(
                 shopee_raw, ruten_raw, easystore_raw,
-                compare, storage, settings,
+                compare, storage, settings, load_combo_sku(),
             )
         if daily.empty:
             st.warning("計算結果為空，請確認資料是否正確")

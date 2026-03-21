@@ -7,6 +7,7 @@ from utils.data_manager import (
     load_delivery,
     save_delivery,
     clear_delivery,
+    load_combo_sku,
 )
 
 st.set_page_config(page_title="導出出庫", page_icon="📦", layout="wide")
@@ -15,8 +16,24 @@ st.title("📦 導出出庫")
 # 載入對照表與入庫資料，建立映射
 compare = load_compare_table()
 storage = load_storage()
+combo = load_combo_sku()
 
-# 從入庫建立 入庫品名 → {貨號, 主貨號} 映射
+# 從入庫建立 貨號 → {名稱, 規格, 主貨號, 單位成本} lookup
+stg_sku_lookup: dict[str, dict] = {}
+if not storage.empty:
+    name_col = "商品名稱" if "商品名稱" in storage.columns else "名稱"
+    cost_col = "單位成本" if "單位成本" in storage.columns else "單價"
+    for _, row in storage.drop_duplicates(subset=["貨號"]).iterrows():
+        sku = str(row.get("貨號", "")).strip()
+        if sku:
+            stg_sku_lookup[sku] = {
+                "名稱": str(row.get(name_col, "")).strip(),
+                "規格": str(row.get("規格", "")).strip(),
+                "主貨號": str(row.get("主貨號", "")).strip(),
+                "單位成本": float(row.get(cost_col, 0) or 0),
+            }
+
+# 從入庫建立 入庫品名 → {貨號, 主貨號} 映射（保留向後兼容）
 stg_mapping: dict[str, dict] = {}
 if not storage.empty:
     name_col = "商品名稱" if "商品名稱" in storage.columns else "名稱"
@@ -29,6 +46,19 @@ if not storage.empty:
                 "貨號": str(row.get("貨號", "")),
                 "主貨號": str(row.get("主貨號", "")),
             }
+
+# 組合貨號 → stg_mapping 加入組合品名
+if not combo.empty:
+    for combo_code in combo["組合貨號"].unique():
+        sub = combo[combo["組合貨號"] == combo_code]
+        parts = " + ".join(
+            f"{r['原料貨號']}×{int(r['原料數量'])}" for _, r in sub.iterrows()
+        )
+        label = f"組合:{parts}"
+        stg_mapping[label] = {
+            "貨號": combo_code,
+            "主貨號": combo_code.split("-")[0] if "-" in combo_code else combo_code,
+        }
 
 # 從對照表建立 (平台商品名稱, 平台) → 入庫品名 映射
 compare_mapping: dict[tuple[str, str], str] = {}
@@ -158,7 +188,7 @@ def generate_delivery() -> pd.DataFrame:
                 continue
 
             if stg_name == "未匹配":
-                # 入庫品名为未匹配：用平台原始資料
+                # 入庫品名為未匹配：用平台原始資料
                 sku_info = compare_sku_mapping.get((plat_key, platform), {})
                 sku = sku_info.get("貨號", "")
                 main_sku = sku_info.get("主貨號", "")
@@ -177,8 +207,43 @@ def generate_delivery() -> pd.DataFrame:
                     prod_name = plat_key
                     prod_spec = ""
                 is_unmatched = True
+            elif stg_name.startswith("組合:"):
+                # 組合貨號：展開為原料明細，每個原料獨立一筆出庫記錄
+                sku_info = compare_sku_mapping.get((plat_key, platform), {})
+                combo_code = sku_info.get("貨號", "")
+                if not combo_code:
+                    fb = stg_mapping.get(stg_name, {})
+                    combo_code = fb.get("貨號", "")
+
+                order_data = _get_order_data(row, platform)
+                order_qty = order_data["數量"]
+
+                if not combo.empty and combo_code:
+                    components = combo[combo["組合貨號"].astype(str).str.strip() == combo_code]
+                    for _, comp in components.iterrows():
+                        mat_sku = str(comp["原料貨號"]).strip()
+                        mat_qty = int(comp["原料數量"])
+                        total_mat_qty = order_qty * mat_qty
+                        comp_info = stg_sku_lookup.get(mat_sku, {})
+                        comp_name = comp_info.get("名稱", mat_sku)
+                        comp_spec = comp_info.get("規格", "")
+                        comp_main = comp_info.get("主貨號", mat_sku.split("-")[0] if "-" in mat_sku else mat_sku)
+                        comp_cost = comp_info.get("單位成本", 0)
+                        records.append({
+                            "主貨號": comp_main,
+                            "貨號": mat_sku,
+                            "名稱": comp_name,
+                            "規格": comp_spec,
+                            "出庫數量": total_mat_qty,
+                            "單價": round(comp_cost, 2),
+                            "金額": round(comp_cost * total_mat_qty, 2),
+                            "出庫日期": order_data["日期"],
+                            "平台": platform,
+                            "匹配狀態": "",
+                        })
+                continue  # skip the normal records.append below
             else:
-                # 正常匹配流程
+                # 一般匹配流程
                 if "[" in stg_name and stg_name.endswith("]"):
                     parts = stg_name.rsplit("[", 1)
                     prod_name = parts[0]
@@ -194,14 +259,15 @@ def generate_delivery() -> pd.DataFrame:
             # 取得訂單資料
             order_data = _get_order_data(row, platform)
 
+            _price = round(order_data["單價"], 2)
             records.append({
                 "主貨號": main_sku,
                 "貨號": sku,
                 "名稱": prod_name,
                 "規格": prod_spec,
                 "出庫數量": order_data["數量"],
-                "單價": order_data["單價"],
-                "金額": order_data["數量"] * order_data["單價"],
+                "單價": _price,
+                "金額": round(order_data["數量"] * _price, 2),
                 "出庫日期": order_data["日期"],
                 "平台": platform,
                 "匹配狀態": "未匹配" if is_unmatched else "",
@@ -303,7 +369,11 @@ else:
 
     display_cols = [c for c in delivery.columns if c != "匹配狀態"]
     styled = delivery[display_cols].style.apply(_highlight_row, axis=1)
-    st.dataframe(styled, width='stretch', hide_index=True)
+    _money_cfg = {
+        c: st.column_config.NumberColumn(format="$%.2f")
+        for c in ["單價", "金額"] if c in delivery.columns
+    }
+    st.dataframe(styled, width='stretch', hide_index=True, column_config=_money_cfg)
 
 # ── 清0 出庫資料 ───────────────────────────────────────────
 st.markdown("---")
