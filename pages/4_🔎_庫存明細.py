@@ -54,6 +54,17 @@ if st.button("🔄 更新庫存明細", type="primary"):
                     "貨號"
                 ].astype(str).str.strip()
             )
+            # 組合貨號的原料 SKU 也須納入庫存明細
+            if not combo.empty and "組合貨號" in combo.columns and "原料貨號" in combo.columns:
+                combo_codes_matched = matched_skus & set(combo["組合貨號"].astype(str).str.strip())
+                if combo_codes_matched:
+                    component_skus = set(
+                        combo.loc[
+                            combo["組合貨號"].astype(str).str.strip().isin(combo_codes_matched),
+                            "原料貨號"
+                        ].astype(str).str.strip()
+                    )
+                    matched_skus |= component_skus
             result = result[result["貨號"].astype(str).str.strip().isin(matched_skus)]
         save_inventory_details(result)
         st.success(f"✅ 庫存明細已更新！共 {len(result)} 筆")
