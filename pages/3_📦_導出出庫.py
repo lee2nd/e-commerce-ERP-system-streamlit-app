@@ -238,8 +238,8 @@ def generate_delivery() -> pd.DataFrame:
                             "單價": round(comp_cost, 2),
                             "金額": round(comp_cost * total_mat_qty, 2),
                             "出庫日期": order_data["日期"],
+                            "匹配狀態": "已匹配",
                             "平台": platform,
-                            "匹配狀態": "",
                         })
                 continue  # skip the normal records.append below
             else:
@@ -269,8 +269,8 @@ def generate_delivery() -> pd.DataFrame:
                 "單價": _price,
                 "金額": round(order_data["數量"] * _price, 2),
                 "出庫日期": order_data["日期"],
+                "匹配狀態": "未匹配" if is_unmatched else "已匹配",
                 "平台": platform,
-                "匹配狀態": "未匹配" if is_unmatched else "",
             })
     
     if records:
@@ -324,7 +324,7 @@ else:
     unmatched_count = (compare["入庫品名"].fillna("").astype(str) == "未匹配").sum()
     total_count = len(compare)
     if unmatched_count > 0:
-        st.info(f"📋 對照表：{unmatched_count}/{total_count} 筆未匹配入庫，出庫會使用平台原始資料並標紅色提示")
+        st.info(f"📋 對照表：{unmatched_count}/{total_count} 筆未匹配入庫")
 
 # 導出出庫按鈕
 if st.button("🚀 導出出庫", type="primary"):
@@ -346,32 +346,34 @@ delivery = load_delivery()
 if delivery.empty:
     st.info("尚無出庫資料，請點擊上方「導出出庫」按鈕產生")
 else:
+    # 篩選器
+    match_filter = st.radio("匹配狀態", options=["全部", "已匹配", "未匹配"], horizontal=True)
+
+    view_dlv = delivery.copy()
+    if "匹配狀態" in view_dlv.columns:
+        if match_filter == "未匹配":
+            view_dlv = view_dlv[view_dlv["匹配狀態"] == "未匹配"]
+        elif match_filter == "已匹配":
+            view_dlv = view_dlv[view_dlv["匹配狀態"] == "已匹配"]
+    # 欄位順序：平台移至最後
+    _cols = [c for c in view_dlv.columns if c != "平台"] + (["平台"] if "平台" in view_dlv.columns else [])
+    view_dlv = view_dlv[_cols]
+
     # 平台顏色標註
     _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
 
     def _highlight_row(row):
-        is_unmatched = "匹配狀態" in delivery.columns and delivery.at[row.name, "匹配狀態"] == "未匹配"
         color = _PLAT_COLORS.get(row.get("平台", ""), "")
         result = []
         for c in row.index:
-            if is_unmatched:
-                if c == "平台" and color:
-                    result.append(f"background-color: {color}20; color: {color}")
-                else:
-                    bg = f"background-color: {color}10" if color else ""
-                    result.append(f"{bg}; color: red" if bg else "color: red")
-            elif color:
-                result.append(f"background-color: {color}20; color: {color}" if c == "平台"
-                               else f"background-color: {color}10")
-            else:
-                result.append("")
+            result.append(f"background-color: {color}20; color: {color}" if c == "平台"
+                            else f"background-color: {color}10")
         return result
 
-    display_cols = [c for c in delivery.columns if c != "匹配狀態"]
-    styled = delivery[display_cols].style.apply(_highlight_row, axis=1)
+    styled = view_dlv.style.apply(_highlight_row, axis=1)
     _money_cfg = {
         c: st.column_config.NumberColumn(format="$%.2f")
-        for c in ["單價", "金額"] if c in delivery.columns
+        for c in ["單價", "金額"] if c in view_dlv.columns
     }
     st.dataframe(styled, width='stretch', hide_index=True, column_config=_money_cfg)
 

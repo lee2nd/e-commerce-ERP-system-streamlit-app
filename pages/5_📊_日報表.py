@@ -72,16 +72,25 @@ daily["日期"] = pd.to_datetime(daily["日期"], errors="coerce")
 if "備註" not in daily.columns:
     daily["備註"] = ""
 daily["備註"] = daily["備註"].fillna("").astype(str)
-if "商品成本" in daily.columns and "商品名稱" in daily.columns:
+# 舊資料相容：備註為空且商品名稱也為空 → 代表當時沒匹配到，補標「未匹配」
+if "商品名稱" in daily.columns:
     _need_fill = (
         (daily["備註"].fillna("").astype(str).str.strip() == "") &
-        (
-            (daily["商品名稱"].fillna("").astype(str).str.strip() == "") |
-            (daily["商品成本"].fillna(0) == 0)
-        )
+        (daily["商品名稱"].fillna("").astype(str).str.strip() == "")
     )
     if _need_fill.any():
         daily.loc[_need_fill, "備註"] = "未匹配"
+        save_daily_report(daily.drop(columns=["_unmatched"], errors="ignore"))
+
+# 舊資料修正：退貨/未取貨且商品名稱有值，代表 SKU 有匹配，把誤標的「未匹配」清除
+if "訂單狀態" in daily.columns and "商品名稱" in daily.columns:
+    _fix_wrong = (
+        daily["訂單狀態"].isin(["退貨", "未取貨"]) &
+        daily["備註"].astype(str).str.contains("未匹配", na=False) &
+        (daily["商品名稱"].fillna("").astype(str).str.strip() != "")
+    )
+    if _fix_wrong.any():
+        daily.loc[_fix_wrong, "備註"] = ""
         save_daily_report(daily.drop(columns=["_unmatched"], errors="ignore"))
 
 # 篩選器
@@ -115,19 +124,9 @@ if date_range and len(date_range) == 2:
         (view["日期"].dt.date <= date_range[1])
     ]
 if unmatched_filter == "未匹配":
-    _is_unmatched = (
-        view["備註"].astype(str).str.contains("未匹配", na=False) |
-        (view["商品名稱"].fillna("").astype(str).str.strip() == "") |
-        (view["商品成本"].fillna(0) == 0)
-    )
-    view = view[_is_unmatched]
+    view = view[view["備註"].astype(str).str.contains("未匹配", na=False)]
 elif unmatched_filter == "已匹配":
-    _is_unmatched = (
-        view["備註"].astype(str).str.contains("未匹配", na=False) |
-        (view["商品名稱"].fillna("").astype(str).str.strip() == "") |
-        (view["商品成本"].fillna(0) == 0)
-    )
-    view = view[~_is_unmatched]
+    view = view[~view["備註"].astype(str).str.contains("未匹配", na=False)]
 
 # 摘要
 st.markdown("### 摘要")
@@ -186,8 +185,24 @@ if st.button("💾 儲存修改", key="save_daily_edit"):
     for col in save_edit.columns:
         if col in base.columns:
             base.loc[save_edit.index, col] = save_edit[col].values
+
+    # 重算被編輯列的總成本與淨利
+    _cost_cols = ["商品成本", "折扣優惠", "未取貨/退貨運費",
+                  "成交手續費", "其他服務費", "金流與系統處理費",
+                  "發票處理費", "其他費用"]
+    for _c in _cost_cols:
+        if _c not in base.columns:
+            base[_c] = 0
+    idx = save_edit.index
+    base.loc[idx, "總成本"] = sum(
+        base.loc[idx, _c].fillna(0) for _c in _cost_cols
+    )
+    base.loc[idx, "淨利"] = (
+        base.loc[idx, "訂單金額"].fillna(0) - base.loc[idx, "總成本"]
+    )
+
     save_daily_report(base)
-    st.success("✅ 修改已儲存")
+    st.success("✅ 修改已儲存，總成本與淨利已重新計算")
     st.rerun()
 
 # ── 清0 日報表 ─────────────────────────────────────────────

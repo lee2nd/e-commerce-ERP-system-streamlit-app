@@ -57,8 +57,12 @@ TEMPLATE_PATH = DATA_DIR / "入庫.xlsx"
 
 with tab_storage:
 
-    if st.session_state.pop("stg_upload_success", None) is not None:
-        st.success("✅ 成功匯入入庫資料")
+    _stg_result = st.session_state.pop("stg_upload_success", None)
+    if _stg_result is not None:
+        if _stg_result > 0:
+            st.success(f"✅ 成功匯入入庫資料，新增 {_stg_result} 筆（已存在的 PK 保留舊資料）")
+        else:
+            st.info("✅ 匯入完成，本次檔案內的資料皆已存在（無新增）")
 
     st.subheader("目前入庫資料 (後台使用)")
     storage = load_storage()
@@ -171,9 +175,21 @@ with tab_storage:
                         .reset_index()[keep_cols]
                     )
 
-                    # 整份取代（使用者應在 Excel 中保留舊資料 + 新增資料後上傳）
-                    save_storage(new_stg)
-                    st.session_state["stg_upload_success"] = len(new_stg)
+                    # 保留歷史：PK=(貨號+入庫日期) 已存在則保留舊，否則新增
+                    existing_stg = load_storage()
+                    if not existing_stg.empty:
+                        existing_keys = set(
+                            existing_stg["貨號"].astype(str) + "||" + existing_stg["入庫日期"].astype(str)
+                        )
+                        new_keys = new_stg["貨號"].astype(str) + "||" + new_stg["入庫日期"].astype(str)
+                        truly_new = new_stg[~new_keys.isin(existing_keys)]
+                        merged_stg = pd.concat([existing_stg, truly_new], ignore_index=True)
+                        added = len(truly_new)
+                    else:
+                        merged_stg = new_stg
+                        added = len(new_stg)
+                    save_storage(merged_stg)
+                    st.session_state["stg_upload_success"] = added
                     st.rerun()
         except Exception as e:
             st.error(f"匯入失敗：{e}")
