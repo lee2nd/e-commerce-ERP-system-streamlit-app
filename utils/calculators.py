@@ -253,8 +253,10 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         return []
     records = []
     for _, row in df.iterrows():
-        if _s(row.get("不成立原因", "")) != "":
-            continue  # 不成立訂單跳過
+        not_established = _s(row.get("不成立原因", ""))
+        # 不成立原因有值但不含「遺失」→ 取消訂單，跳過
+        if not_established and "遺失" not in not_established:
+            continue
 
         oid = _s(row.get("訂單編號", ""))
         if not oid:
@@ -262,11 +264,10 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
 
         # 訂單狀態
         ret_stat = _s(row.get("退貨 / 退款狀態", ""))
-        stat_raw = _s(row.get("訂單狀態", ""))
-        if ret_stat:
-            status = "退貨"
-        elif "遺失賠償" in stat_raw:
-            status = "遺失賠償"
+        if not_established and "遺失" in not_established:
+            status = "遺失賠償"   # 不成立原因含「遺失」→ 遺失賠償（計算同已完成）
+        elif ret_stat:
+            status = "退貨"       # 退貨 / 退款狀態非空 → 退貨
         else:
             status = "已完成"
 
@@ -346,7 +347,7 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             "商品成本": round(total_cost_item, 0),
             "總成本": round(total_cost, 0),
             "淨利": round(profit, 0),
-            "備註": "", "平台": "蝦皮",
+            "備註": "" if any(r["_matched"] for r in rows) else "未匹配", "平台": "蝦皮",
         })
     return result
 
@@ -380,17 +381,18 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
             items[0]["名稱"] = items[0]["名稱"] or _s(row.get("商品名稱", ""))
             items[0]["規格"] = items[0]["規格"] or item_spec_raw
 
-        # compute per-item ruten fees
-        tx_fee_unit = max(1, min(round(price * 0.03), 400))
-        svc_fee_total = max(1, min(round(price * qty * 0.05), 300 * qty))
+        # 成交手續費：單價 × 數量 × 3%，四捨五入，最低1，最高400
+        tx_fee_line = max(1, min(round(price * qty * 0.03), 400))
+        # 其他服務費：單價 × 數量 × 5%，四捨五入，最低1，最高300
+        svc_fee_line = max(1, min(round(price * qty * 0.05), 300))
 
         ship_method = _s(row.get("運送方式", ""))
         actual_ship = _ruten_logistics(ship_method, settings)
         buyer_ship = _n(row.get("運費", 0))
         ruten_disc = abs(_n(row.get("露天折扣碼金額", 0)))
         checkout_total = _n(row.get("結帳總金額", 0))
-        seller_recv = checkout_total + ruten_disc
-        pay_fee = max(1, round(seller_recv * 0.015))
+        # 金流與系統處理費：(結帳總金額 + 露天折扣碼金額) × 1.5%，四捨五入，最低1，無上限
+        pay_fee = max(1, round((checkout_total + ruten_disc) * 0.015))
 
         records.append({
             "_oid": oid, "_date": _s(row.get("結帳時間", ""))[:10].replace("/", "-"),
@@ -403,9 +405,8 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
             "_buyer_ship": buyer_ship,
             "_actual_ship": actual_ship,
             "_ship_method": ship_method,
-            "_tx_fee_per_unit": tx_fee_unit,
-            "_qty": qty,
-            "_svc_fee": svc_fee_total,
+            "_tx_fee": tx_fee_line,
+            "_svc_fee": svc_fee_line,
             "_pay_fee": pay_fee,
         })
 
@@ -421,18 +422,19 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
         total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
         total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
 
-        coupon = f["_coupon"]
+        coupon = f["_coupon"] if not is_ret else 0  # 未取貨不計折扣優惠
         buyer_ship = f["_buyer_ship"]
         actual_ship = f["_actual_ship"]
         plat_ship = max(0, actual_ship - buyer_ship)
         logistics_diff = max(0, buyer_ship - actual_ship)
 
         ret_ship = actual_ship if is_ret else 0
-        tx_fee = sum(r["_tx_fee_per_unit"] * r["_qty"] for r in rows) if not is_ret else 0
+        tx_fee = sum(r["_tx_fee"] for r in rows) if not is_ret else 0
         svc_fee = sum(r["_svc_fee"] for r in rows) if not is_ret else 0
         pay_fee = f["_pay_fee"] if not is_ret else 0
 
         # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
+        # （未取貨：只計實際運費）
         total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
         profit = total_amt - total_cost
 
@@ -454,7 +456,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
             "商品成本": round(total_cost_item, 0),
             "總成本": round(total_cost, 0),
             "淨利": round(profit, 0),
-            "備註": "", "平台": "露天",
+            "備註": "" if any(r["_matched"] for r in rows) else "未匹配", "平台": "露天",
         })
     return result
 
@@ -527,16 +529,18 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
         f = rows[0]
         status = f["_status"]
         is_ret = status in ("未取貨", "退貨")
+        is_nontaken = status == "未取貨"
 
         total_amt = f["_subtotal"] if not is_ret else 0
         total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
 
-        coupon = f["_order_disc"] + f["_credit"]
+        coupon = (f["_order_disc"] + f["_credit"]) if not is_nontaken else 0  # 未取貨不計折扣優惠
         buyer_ship = f["_buyer_ship"]
         logistics_diff = max(0, actual_ship - buyer_ship)
         ret_ship = actual_ship if is_ret else 0
 
         # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
+        # （未取貨：只計實際運費）
         total_cost = total_cost_item + coupon + ret_ship
         profit = total_amt - total_cost
 
@@ -556,7 +560,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
             "商品成本": round(total_cost_item, 0),
             "總成本": round(total_cost, 0),
             "淨利": round(profit, 0),
-            "備註": "", "平台": "官網",
+            "備註": "" if any(r["_matched"] for r in rows) else "未匹配", "平台": "官網",
         })
     return result
 

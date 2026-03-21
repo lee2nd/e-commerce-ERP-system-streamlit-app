@@ -68,9 +68,24 @@ if daily.empty:
 
 daily["日期"] = pd.to_datetime(daily["日期"], errors="coerce")
 
+# 舊資料回填備註「未匹配」
+if "備註" not in daily.columns:
+    daily["備註"] = ""
+if "商品成本" in daily.columns and "商品名稱" in daily.columns:
+    _need_fill = (
+        (daily["備註"].fillna("").astype(str).str.strip() == "") &
+        (
+            (daily["商品名稱"].fillna("").astype(str).str.strip() == "") |
+            (daily["商品成本"].fillna(0) == 0)
+        )
+    )
+    if _need_fill.any():
+        daily.loc[_need_fill, "備註"] = "未匹配"
+        save_daily_report(daily.drop(columns=["_unmatched"], errors="ignore"))
+
 # 篩選器
 st.markdown("---")
-cf1, cf2, cf3 = st.columns(3)
+cf1, cf2, cf3, cf4 = st.columns(4)
 plat_opts = sorted(daily["平台"].dropna().unique())
 plat_filter = cf1.multiselect("平台", options=plat_opts, default=plat_opts)
 
@@ -88,6 +103,8 @@ if pd.notna(min_d) and pd.notna(max_d):
 else:
     date_range = None
 
+unmatched_filter = cf4.radio("是否未匹配", options=["全部", "未匹配", "已匹配"], horizontal=True)
+
 view = daily.copy()
 view = view[view["平台"].isin(plat_filter)]
 view = view[view["訂單狀態"].isin(status_filter)]
@@ -96,6 +113,20 @@ if date_range and len(date_range) == 2:
         (view["日期"].dt.date >= date_range[0]) &
         (view["日期"].dt.date <= date_range[1])
     ]
+if unmatched_filter == "未匹配":
+    _is_unmatched = (
+        view["備註"].astype(str).str.contains("未匹配", na=False) |
+        (view["商品名稱"].fillna("").astype(str).str.strip() == "") |
+        (view["商品成本"].fillna(0) == 0)
+    )
+    view = view[_is_unmatched]
+elif unmatched_filter == "已匹配":
+    _is_unmatched = (
+        view["備註"].astype(str).str.contains("未匹配", na=False) |
+        (view["商品名稱"].fillna("").astype(str).str.strip() == "") |
+        (view["商品成本"].fillna(0) == 0)
+    )
+    view = view[~_is_unmatched]
 
 # 摘要
 st.markdown("### 摘要")
