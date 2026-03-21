@@ -41,8 +41,22 @@ if st.button("🔄 重新產生日報表", type="primary"):
         if daily.empty:
             st.warning("計算結果為空，請確認資料是否正確")
         else:
-            save_daily_report(daily.drop(columns=["_unmatched"], errors="ignore"))
-            st.success(f"✅ 日報表已產生，共 {len(daily)} 筆")
+            new_df = daily.drop(columns=["_unmatched"], errors="ignore")
+            # 現有日報表已有的訂單保持不變，只新增從未出現過的訂單
+            existing_daily = load_daily_report()
+            if not existing_daily.empty and "訂單編號" in existing_daily.columns and "日期" in existing_daily.columns:
+                existing_keys = set(
+                    existing_daily["訂單編號"].astype(str) + "||" + existing_daily["日期"].astype(str)
+                )
+                new_keys = new_df["訂單編號"].astype(str) + "||" + new_df["日期"].astype(str)
+                truly_new = new_df[~new_keys.isin(existing_keys)]
+                merged = pd.concat([existing_daily, truly_new], ignore_index=True)
+                save_daily_report(merged)
+                added = len(truly_new)
+                st.success(f"✅ 日報表已更新！新增 {added} 筆，保留 {len(existing_daily)} 筆既有記錄")
+            else:
+                save_daily_report(new_df)
+                st.success(f"✅ 日報表已產生，共 {len(new_df)} 筆")
             st.rerun()
 
 # ── 顯示報表 ──────────────────────────────────────────────────
@@ -93,45 +107,56 @@ s4.metric("淨利", f"${int(view['淨利'].sum()):,}" if "淨利" in view.column
 
 # 顏色
 _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
-_PLAT_BG     = {"蝦皮": "#FFF0EB", "露天": "#EAF3FB", "官網": "#E9F9F1"}
-_STATUS_COLORS = {"退貨": "#e74c3c", "未取貨": "#e67e22", "遺失賠償": "#9b59b6"}
-
-def _highlight(row):
-    status_color = _STATUS_COLORS.get(row.get("訂單狀態", ""), "")
-    plat_color   = _PLAT_COLORS.get(row.get("平台", ""), "")
-    plat_bg      = _PLAT_BG.get(row.get("平台", ""), "")
-    styles = []
-    for c in row.index:
-        bg = f"background-color: {plat_bg}; " if plat_bg else ""
-        if c == "平台" and plat_color:
-            styles.append(f"{bg}color: {plat_color}; font-weight: bold")
-        elif status_color and c == "訂單狀態":
-            styles.append(f"{bg}color: {status_color}; font-weight: bold")
-        else:
-            styles.append(bg.rstrip("; "))
-    return styles
-
-# 表格 — drop internal column, format date
-display = view.drop(columns=["_unmatched"], errors="ignore").copy()
-display["日期"] = display["日期"].apply(
-    lambda d: f"{d.year}年{d.month}月{d.day}日" if pd.notna(d) else ""
-)
 
 money_cols = [c for c in ["訂單金額", "折扣優惠", "買家支付運費", "平台補助運費",
                            "實際運費支出", "物流處理費（運費差額）", "未取貨/退貨運費",
                            "成交手續費", "其他服務費", "金流與系統處理費",
                            "發票處理費", "其他費用", "商品成本", "總成本", "淨利"]
-              if c in display.columns]
-
-col_cfg = {c: st.column_config.NumberColumn(format="$%d") for c in money_cols}
+              if c in view.columns]
 
 st.markdown("### 明細")
-st.dataframe(
-    display.style.apply(_highlight, axis=1),
-    width='stretch',
+
+# 準備 editor 用 DataFrame（移除內部欄位，保留原始 index 供回寫）
+view_edit = view.drop(columns=["_unmatched"], errors="ignore").copy()
+
+col_cfg: dict = {}
+# 識別欄位：唯讀
+for _c in ["訂單編號", "平台"]:
+    if _c in view_edit.columns:
+        col_cfg[_c] = st.column_config.TextColumn(disabled=True)
+# 日期欄位
+if "日期" in view_edit.columns:
+    col_cfg["日期"] = st.column_config.DateColumn("日期", format="YYYY-MM-DD")
+# 訂單狀態：下拉選單
+if "訂單狀態" in view_edit.columns:
+    col_cfg["訂單狀態"] = st.column_config.SelectboxColumn(
+        options=["已完成", "退貨", "未取貨", "遺失賠償"]
+    )
+# 金額欄位
+for _c in money_cols:
+    col_cfg[_c] = st.column_config.NumberColumn(format="$%d")
+
+edited_df = st.data_editor(
+    view_edit,
+    key="daily_editor",
+    use_container_width=True,
     hide_index=True,
+    num_rows="fixed",
+    height=500,
     column_config=col_cfg,
 )
+
+if st.button("💾 儲存修改", key="save_daily_edit"):
+    # 以原始 index 把編輯後的列寫回完整 daily（非篩選部分保持不變）
+    base = daily.drop(columns=["_unmatched"], errors="ignore").copy()
+    save_edit = edited_df.copy()
+    save_edit["日期"] = pd.to_datetime(save_edit["日期"], errors="coerce")
+    for col in save_edit.columns:
+        if col in base.columns:
+            base.loc[save_edit.index, col] = save_edit[col].values
+    save_daily_report(base)
+    st.success("✅ 修改已儲存")
+    st.rerun()
 
 # ── 清0 日報表 ─────────────────────────────────────────────
 st.markdown("---")
