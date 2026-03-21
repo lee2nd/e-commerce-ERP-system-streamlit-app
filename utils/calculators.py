@@ -226,7 +226,29 @@ def _ruten_logistics(shipping_method: str, settings: dict) -> float:
     return float(settings.get("ruten_default_shipping", 65))
 
 
-def _process_shopee(df: pd.DataFrame, stg: dict) -> list[dict]:
+def _expand_items_for_combo(sku: str, qty: int, stg: dict, combo_df) -> list[dict]:
+    """If sku is a combo code, return component items; otherwise return single item."""
+    if combo_df is not None and not combo_df.empty:
+        combo_set = set(combo_df["組合貨號"].astype(str).str.strip())
+        if sku in combo_set:
+            components = combo_df[combo_df["組合貨號"].astype(str).str.strip() == sku]
+            items = []
+            for _, comp in components.iterrows():
+                mat_sku = str(comp["原料貨號"]).strip()
+                mat_qty = int(comp["原料數量"])
+                comp_stg = stg.get(mat_sku, {})
+                items.append({
+                    "名稱": comp_stg.get("名稱", mat_sku),
+                    "規格": comp_stg.get("規格", ""),
+                    "sku": mat_sku,
+                    "qty": qty * mat_qty,
+                })
+            return items
+    info = stg.get(sku, {})
+    return [{"名稱": info.get("名稱", ""), "規格": info.get("規格", ""), "sku": sku, "qty": qty}]
+
+
+def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
     if df.empty:
         return []
     records = []
@@ -257,14 +279,17 @@ def _process_shopee(df: pd.DataFrame, stg: dict) -> list[dict]:
         price = act_p if act_p is not None else orig_p
 
         stg_info = stg.get(sku, {})
-        item_name = stg_info.get("名稱") or _s(row.get("商品名稱", ""))
-        item_spec = stg_info.get("規格") or _s(row.get("商品選項名稱", ""))
         item_cost = stg_info.get("成本", 0) * qty if stg_info else 0
+        items = _expand_items_for_combo(sku, qty, stg, combo_df)
+        # For non-combo single items, prefer platform name/spec when stg_info is absent
+        if len(items) == 1 and not stg_info:
+            items[0]["名稱"] = items[0]["名稱"] or _s(row.get("商品名稱", ""))
+            items[0]["規格"] = items[0]["規格"] or _s(row.get("商品選項名稱", ""))
 
         records.append({
             "_oid": oid, "_date": _s(row.get("訂單成立日期", ""))[:10],
             "_status": status,
-            "_item": {"名稱": item_name, "規格": item_spec, "sku": sku, "qty": qty},
+            "_items": items,
             "_line_amt": price * qty,
             "_item_cost": item_cost,
             "_matched": bool(stg_info),
@@ -303,7 +328,7 @@ def _process_shopee(df: pd.DataFrame, stg: dict) -> list[dict]:
         total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
         profit = total_amt - total_cost
 
-        item_name_str, sku_str = _build_item_strings([r["_item"] for r in rows])
+        item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
         result.append({
             "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
             "商品名稱": item_name_str, "貨號": sku_str,
@@ -326,7 +351,7 @@ def _process_shopee(df: pd.DataFrame, stg: dict) -> list[dict]:
     return result
 
 
-def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict]:
+def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -> list[dict]:
     if df.empty:
         return []
     records = []
@@ -348,10 +373,12 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict]:
         price = _n(row.get("單價", 0))
 
         stg_info = stg.get(sku, {})
-        item_name = stg_info.get("名稱") or _s(row.get("商品名稱", ""))
-        item_spec_raw = _s(row.get("規格", "")) + ("::" + _s(row.get("項目", "")) if _s(row.get("項目", "")) else "")
-        item_spec = stg_info.get("規格") or item_spec_raw
         item_cost = stg_info.get("成本", 0) * qty if stg_info else 0
+        items = _expand_items_for_combo(sku, qty, stg, combo_df)
+        if len(items) == 1 and not stg_info:
+            item_spec_raw = _s(row.get("規格", "")) + ("::" + _s(row.get("項目", "")) if _s(row.get("項目", "")) else "")
+            items[0]["名稱"] = items[0]["名稱"] or _s(row.get("商品名稱", ""))
+            items[0]["規格"] = items[0]["規格"] or item_spec_raw
 
         # compute per-item ruten fees
         tx_fee_unit = max(1, min(round(price * 0.03), 400))
@@ -368,7 +395,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict]:
         records.append({
             "_oid": oid, "_date": _s(row.get("結帳時間", ""))[:10].replace("/", "-"),
             "_status": status,
-            "_item": {"名稱": item_name, "規格": item_spec, "sku": sku, "qty": qty},
+            "_items": items,
             "_line_amt": price * qty,
             "_item_cost": item_cost,
             "_matched": bool(stg_info),
@@ -409,7 +436,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict]:
         total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
         profit = total_amt - total_cost
 
-        item_name_str, sku_str = _build_item_strings([r["_item"] for r in rows])
+        item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
         result.append({
             "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
             "商品名稱": item_name_str, "貨號": sku_str,
@@ -432,7 +459,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict]:
     return result
 
 
-def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict]:
+def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -> list[dict]:
     if df.empty:
         return []
     actual_ship = float(settings.get("easystore_shipping", 65))
@@ -468,9 +495,11 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict
         price = _n(row.get("Item Price", 0))
 
         stg_info = stg.get(sku, {})
-        item_name = stg_info.get("名稱") or _s(row.get("Item Name", ""))
-        item_spec = stg_info.get("規格") or _s(row.get("Item Variant", ""))
         item_cost = stg_info.get("成本", 0) * qty if stg_info else 0
+        items = _expand_items_for_combo(sku, qty, stg, combo_df)
+        if len(items) == 1 and not stg_info:
+            items[0]["名稱"] = items[0]["名稱"] or _s(row.get("Item Name", ""))
+            items[0]["規格"] = items[0]["規格"] or _s(row.get("Item Variant", ""))
 
         subtotal = _n(row.get("Subtotal", 0))
         order_disc = abs(_n(row.get("Order Discount", 0)))
@@ -480,7 +509,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict
         records.append({
             "_oid": oid, "_date": _s(row.get("Date", ""))[:10],
             "_status": status,
-            "_item": {"名稱": item_name, "規格": item_spec, "sku": sku, "qty": qty},
+            "_items": items,
             "_line_amt": price * qty,
             "_item_cost": item_cost,
             "_matched": bool(stg_info),
@@ -511,7 +540,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict) -> list[dict
         total_cost = total_cost_item + coupon + ret_ship
         profit = total_amt - total_cost
 
-        item_name_str, sku_str = _build_item_strings([r["_item"] for r in rows])
+        item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
         result.append({
             "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
             "商品名稱": item_name_str, "貨號": sku_str,
@@ -550,9 +579,9 @@ def generate_daily_report(
     stg = _build_stg_lookup(storage_df, combo_df)
 
     all_records = (
-        _process_shopee(shopee_raw, stg)
-        + _process_ruten(ruten_raw, stg, settings)
-        + _process_easystore(easystore_raw, stg, settings)
+        _process_shopee(shopee_raw, stg, combo_df)
+        + _process_ruten(ruten_raw, stg, settings, combo_df)
+        + _process_easystore(easystore_raw, stg, settings, combo_df)
     )
     if not all_records:
         return pd.DataFrame()
