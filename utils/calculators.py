@@ -465,7 +465,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
         buyer_ship = f["_buyer_ship"]
         actual_ship = f["_actual_ship"]
         plat_ship = max(0, actual_ship - buyer_ship)
-        logistics_diff = max(0, buyer_ship - actual_ship)
+        logistics_diff = max(0, actual_ship - buyer_ship)
 
         ret_ship = actual_ship if is_ret else 0
         tx_fee = sum(r["_tx_fee"] for r in rows) if not is_ret else 0
@@ -590,7 +590,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
 
         coupon = (f["_order_disc"] + f["_credit"]) if not is_nontaken else 0  # 未取貨不計折扣優惠
         buyer_ship = f["_buyer_ship"]
-        logistics_diff = max(0, actual_ship - buyer_ship)
+        logistics_diff = max(0, buyer_ship - actual_ship)
         ret_ship = actual_ship if is_ret else 0
 
         # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用

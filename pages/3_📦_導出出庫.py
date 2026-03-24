@@ -385,7 +385,20 @@ if delivery.empty:
     st.info("尚無出庫資料，請點擊上方「導出出庫」按鈕產生")
 else:
     # 篩選器
-    match_filter = st.radio("匹配狀態", options=["全部", "已匹配", "未匹配"], horizontal=True)
+    _f1, _f2, _f3 = st.columns([2, 2, 3])
+    with _f1:
+        match_filter = st.radio("匹配狀態", options=["全部", "已匹配", "未匹配"], horizontal=True)
+    with _f2:
+        plat_options = ["全部"] + sorted(delivery["平台"].dropna().unique().tolist()) if "平台" in delivery.columns else ["全部"]
+        plat_filter = st.selectbox("平台", options=plat_options)
+    with _f3:
+        if "出庫日期" in delivery.columns:
+            _dates = pd.to_datetime(delivery["出庫日期"], errors="coerce").dropna()
+            _min_date = _dates.min().date() if not _dates.empty else None
+            _max_date = _dates.max().date() if not _dates.empty else None
+            date_range = st.date_input("日期範圍", value=(_min_date, _max_date) if _min_date else [], key="dlv_date_range")
+        else:
+            date_range = []
 
     view_dlv = delivery.copy()
     if "匹配狀態" in view_dlv.columns:
@@ -393,6 +406,12 @@ else:
             view_dlv = view_dlv[view_dlv["匹配狀態"] == "未匹配"]
         elif match_filter == "已匹配":
             view_dlv = view_dlv[view_dlv["匹配狀態"] == "已匹配"]
+    if "平台" in view_dlv.columns and plat_filter != "全部":
+        view_dlv = view_dlv[view_dlv["平台"] == plat_filter]
+    if "出庫日期" in view_dlv.columns and isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+        _start, _end = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
+        _dt = pd.to_datetime(view_dlv["出庫日期"], errors="coerce")
+        view_dlv = view_dlv[(_dt >= _start) & (_dt <= _end)]
     # 欄位順序：平台移至最後
     _cols = [c for c in view_dlv.columns if c != "平台"] + (["平台"] if "平台" in view_dlv.columns else [])
     view_dlv = view_dlv[_cols]
