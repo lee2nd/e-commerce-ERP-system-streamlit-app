@@ -45,10 +45,13 @@ if st.button("🔄 重新產生日報表", type="primary"):
             # 現有日報表已有的訂單保持不變，只新增從未出現過的訂單
             existing_daily = load_daily_report()
             if not existing_daily.empty and "訂單編號" in existing_daily.columns and "日期" in existing_daily.columns:
+                # 部份退貨會產生兩筆相同訂單編號+日期（一筆已完成、一筆退貨），需加入訂單狀態區分
+                _stat_ex = existing_daily["訂單狀態"].astype(str) if "訂單狀態" in existing_daily.columns else ""
+                _stat_new = new_df["訂單狀態"].astype(str) if "訂單狀態" in new_df.columns else ""
                 existing_keys = set(
-                    existing_daily["訂單編號"].astype(str) + "||" + existing_daily["日期"].astype(str)
+                    existing_daily["訂單編號"].astype(str) + "||" + existing_daily["日期"].astype(str) + "||" + _stat_ex
                 )
-                new_keys = new_df["訂單編號"].astype(str) + "||" + new_df["日期"].astype(str)
+                new_keys = new_df["訂單編號"].astype(str) + "||" + new_df["日期"].astype(str) + "||" + _stat_new
                 truly_new = new_df[~new_keys.isin(existing_keys)]
                 merged = pd.concat([existing_daily, truly_new], ignore_index=True)
                 save_daily_report(merged)

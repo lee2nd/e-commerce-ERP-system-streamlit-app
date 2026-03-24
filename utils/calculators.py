@@ -297,13 +297,21 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             items_orig[0]["名稱"] = items_orig[0]["名稱"] or _s(row.get("商品名稱", ""))
             items_orig[0]["規格"] = items_orig[0]["規格"] or _s(row.get("商品選項名稱", ""))
 
+        # items_ret：退回數量（部份退貨退貨行顯示用）
+        return_qty_val = max(0, qty - effective_qty)
+        items_ret = _expand_items_for_combo(sku, return_qty_val, stg, combo_df) if return_qty_val > 0 else []
+        if items_ret and len(items_ret) == 1 and not stg_info:
+            items_ret[0]["名稱"] = items_ret[0]["名稱"] or _s(row.get("商品名稱", ""))
+            items_ret[0]["規格"] = items_ret[0]["規格"] or _s(row.get("商品選項名稱", ""))
+
         records.append({
             "_oid": oid, "_date": _s(row.get("訂單成立日期", ""))[:10],
             "_row_status": _row_status,
             "_has_ret": bool(ret_stat),        # 此列是否有退貨狀態
             "_effective_qty": effective_qty,   # 有效成交數量
-            "_items_eff": items_eff,           # 有效數量商品（部份退貨）
+            "_items_eff": items_eff,           # 有效數量商品（部份退貨保留行）
             "_items_orig": items_orig,         # 原始数量商品（整單退貨顯示用）
+            "_items_ret": items_ret,           # 退回數量商品（部份退貨退貨行）
             "_line_amt": price * effective_qty,
             "_item_cost": stg_info.get("成本", 0) * effective_qty if stg_info else 0,
             "_matched": bool(stg_info),
@@ -316,6 +324,32 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             "_svc_fee": abs(_n(row.get("其他服務費", 0))),
             "_pay_fee": abs(_n(row.get("金流與系統處理費", 0))),
         })
+
+    def _shopee_row(date, oid, status, items, order_amt, coupon, buyer_ship, plat_ship,
+                    ret_ship, tx_fee, svc_fee, pay_fee, cost_item, matched, remark_extra=""):
+        total_cost = cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
+        profit = order_amt - total_cost
+        name_str, sku_str = _build_item_strings(items)
+        note_parts = (["未匹配"] if not matched else []) + ([remark_extra] if remark_extra else [])
+        return {
+            "日期": date, "訂單編號": oid, "訂單狀態": status,
+            "商品名稱": name_str, "貨號": sku_str,
+            "訂單金額": round(order_amt, 0),
+            "折扣優惠": round(coupon, 0),
+            "買家支付運費": round(buyer_ship, 0),
+            "平台補助運費": round(plat_ship, 0),
+            "實際運費支出": round(buyer_ship + plat_ship, 0),
+            "物流處理費（運費差額）": 0,
+            "未取貨/退貨運費": round(ret_ship, 0),
+            "成交手續費": round(tx_fee, 0),
+            "其他服務費": round(svc_fee, 0),
+            "金流與系統處理費": round(pay_fee, 0),
+            "發票處理費": 0, "其他費用": 0,
+            "商品成本": round(cost_item, 0),
+            "總成本": round(total_cost, 0),
+            "淨利": round(profit, 0),
+            "備註": "、".join(note_parts), "平台": "蝦皮",
+        }
 
     result = []
     from itertools import groupby as _groupby
@@ -330,65 +364,64 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         # 部份退貨：有部分商品退貨但仍有有效數量
         is_partial_ret = any_ret and not is_full_ret
 
-        if any_ret:
-            status = "退貨"
-        else:
-            status = f["_row_status"]  # 已完成 or 遺失賠償
-
-        ret_ship = f["_return_ship"] if any_ret else 0
         buyer_ship = f["_buyer_ship"]
         plat_ship = f["_plat_ship"]
+        ret_ship = f["_return_ship"] if any_ret else 0
 
-        if is_full_ret:
+        if is_partial_ret:
+            # 部份退貨：拆成兩行——已完成（保留商品）+ 退貨（退回商品）
+            retained_items = []
+            for r in rows:
+                if not r["_has_ret"]:
+                    retained_items.extend(r["_items_orig"])
+                elif r["_effective_qty"] > 0:
+                    retained_items.extend(r["_items_eff"])
+            returned_items = [it for r in rows if r["_has_ret"] for it in r["_items_ret"]]
+            comp_amt = sum(r["_line_amt"] for r in rows)
+            comp_cost_item = sum(r["_item_cost"] for r in rows)
+            coupon = f["_coupon"]
+            tx_fee = f["_tx_fee"]
+            svc_fee = f["_svc_fee"]
+            pay_fee = f["_pay_fee"]
+            comp_matched = any(r["_matched"] and (not r["_has_ret"] or r["_effective_qty"] > 0) for r in rows)
+            ret_matched = any(r["_matched"] and r["_has_ret"] for r in rows)
+            # 已完成行：保留商品、一般費用歸此行，退貨運費為 0
+            result.append(_shopee_row(
+                f["_date"], oid, "已完成", retained_items,
+                comp_amt, coupon, buyer_ship, plat_ship,
+                0, tx_fee, svc_fee, pay_fee, comp_cost_item, comp_matched, "部份退貨",
+            ))
+            # 退貨行：退回商品、費用均為 0，只計退貨運費
+            result.append(_shopee_row(
+                f["_date"], oid, "退貨", returned_items,
+                0, 0, 0, 0,
+                ret_ship, 0, 0, 0, 0, ret_matched, "部份退貨",
+            ))
+        elif is_full_ret:
             # 整單退貨：金額與商品成本歸零，只計退貨運費
-            total_amt = 0
-            total_cost_item = 0
-            coupon = 0
-            tx_fee = 0
-            svc_fee = 0
-            pay_fee = 0
             display_items = [it for r in rows for it in r["_items_orig"]]
             is_matched = any(r["_matched"] for r in rows)
+            result.append(_shopee_row(
+                f["_date"], oid, "退貨", display_items,
+                0, 0, buyer_ship, plat_ship,
+                ret_ship, 0, 0, 0, 0, is_matched,
+            ))
         else:
-            # 已完成 / 遺失賠償 / 部份退貨：以有效數量計算
+            # 已完成 / 遺失賠償
+            status = f["_row_status"]
             total_amt = sum(r["_line_amt"] for r in rows)
             total_cost_item = sum(r["_item_cost"] for r in rows)
             coupon = f["_coupon"]
             tx_fee = f["_tx_fee"]
             svc_fee = f["_svc_fee"]
             pay_fee = f["_pay_fee"]
-            if is_partial_ret:
-                # 只顯示有效成交的商品
-                display_items = [it for r in rows for it in r["_items_eff"]]
-                is_matched = any(r["_matched"] and r["_effective_qty"] > 0 for r in rows)
-            else:
-                display_items = [it for r in rows for it in r["_items_orig"]]
-                is_matched = any(r["_matched"] for r in rows)
-
-        # 總成本：商品成本＋折扣優惠＋退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用 + 物流處理費（運費差額）
-        total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
-        profit = total_amt - total_cost
-
-        item_name_str, sku_str = _build_item_strings(display_items)
-        result.append({
-            "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
-            "商品名稱": item_name_str, "貨號": sku_str,
-            "訂單金額": round(total_amt, 0),
-            "折扣優惠": round(coupon, 0),
-            "買家支付運費": round(buyer_ship, 0),
-            "平台補助運費": round(plat_ship, 0),
-            "實際運費支出": round(buyer_ship + plat_ship, 0),
-            "物流處理費（運費差額）": 0,
-            "未取貨/退貨運費": round(ret_ship, 0),
-            "成交手續費": round(tx_fee, 0),
-            "其他服務費": round(svc_fee, 0),
-            "金流與系統處理費": round(pay_fee, 0),
-            "發票處理費": 0, "其他費用": 0,
-            "商品成本": round(total_cost_item, 0),
-            "總成本": round(total_cost, 0),
-            "淨利": round(profit, 0),
-            "備註": "" if is_matched else "未匹配", "平台": "蝦皮",
-        })
+            display_items = [it for r in rows for it in r["_items_orig"]]
+            is_matched = any(r["_matched"] for r in rows)
+            result.append(_shopee_row(
+                f["_date"], oid, status, display_items,
+                total_amt, coupon, buyer_ship, plat_ship,
+                0, tx_fee, svc_fee, pay_fee, total_cost_item, is_matched,
+            ))
     return result
 
 

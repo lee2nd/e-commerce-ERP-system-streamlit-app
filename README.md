@@ -106,6 +106,19 @@
    - 露天：`max(0, 實際運費支出 − 買家支付運費)`
    - 官網：`max(0, 買家支付運費 − 實際運費支出)`
 
+4. **官網訂單狀態判斷邏輯更新**
+   - 未出貨，取消訂單：`Fulfillment Service` 為空 且 `Fulfillment Status` = "Restocked" / "Unfulfilled" → 跳過不列出
+   - 已出貨，退貨：`Fulfillment Service` 不為空 且 `Refunded Amount` ≠ 0 → 狀態=退貨
+   - 已出貨，未取貨：`Fulfillment Service` 不為空 且（`Fulfillment Status` = "Restocked"/"Unfulfilled" 或 最後一筆 `Transaction status` = "Pending"）→ 狀態=未取貨
+   - `Transaction status` 以同訂單最後一列非空值為準（付款紀錄以最後一筆判定）
+
+5. **蝦皮部份退貨訂單拆成兩行顯示**
+   - 原本只顯示保留商品（有效數量），退貨商品直接略過
+   - 更新後：拆為兩筆—第一筆「已完成」（保留商品，含一般費用）、第二筆「退貨」（退回商品，只計退貨運費）
+   - 兩筆備註均標示「部份退貨」，可與整單退貨區分
+   - 若未匹配，備註格式為「未匹配、部份退貨」，不影響現有未匹配篩選邏輯
+   - 重新產生日報表的去重 key 改為「訂單編號 + 日期 + 訂單狀態」，確保兩筆均正確保留
+
 ## 資料概況
 - 入庫 : 1000+
 - 蝦皮 : 5000 ~ 8000 / 每月
