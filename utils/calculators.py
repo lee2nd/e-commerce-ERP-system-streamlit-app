@@ -2,6 +2,7 @@
 業務邏輯計算：對照表匹配、日報表 / 月報表 / 出庫 / 庫存明細產生。
 """
 import pandas as pd
+from typing import cast
 pd.set_option('future.no_silent_downcasting', True)
 
 # ══════════════════════════════════════════════════════════════
@@ -364,7 +365,7 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
                 display_items = [it for r in rows for it in r["_items_orig"]]
                 is_matched = any(r["_matched"] for r in rows)
 
-        # 總成本：商品成本＋折扣優惠＋退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
+        # 總成本：商品成本＋折扣優惠＋退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用 + 物流處理費（運費差額）
         total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
         profit = total_amt - total_cost
 
@@ -465,16 +466,16 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
         buyer_ship = f["_buyer_ship"]
         actual_ship = f["_actual_ship"]
         plat_ship = max(0, actual_ship - buyer_ship)
-        logistics_diff = max(0, actual_ship - buyer_ship)
+        logistics_diff = abs(buyer_ship - actual_ship)
 
         ret_ship = actual_ship if is_ret else 0
         tx_fee = sum(r["_tx_fee"] for r in rows) if not is_ret else 0
         svc_fee = sum(r["_svc_fee"] for r in rows) if not is_ret else 0
         pay_fee = f["_pay_fee"] if not is_ret else 0
 
-        # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
+        # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用 + 物流處理費（運費差額）
         # （未取貨：只計實際運費）
-        total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee
+        total_cost = total_cost_item + coupon + ret_ship + tx_fee + svc_fee + pay_fee + logistics_diff
         profit = total_amt - total_cost
 
         item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
@@ -522,6 +523,20 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
         if valid_cols:
             # 3. 一次性對所有目標欄位進行 groupby + ffill (效能更好，且不用 lambda)
             df[valid_cols] = df.groupby("Order Name")[valid_cols].ffill()
+    # 預先計算每筆訂單的最後一列 Transaction Status
+    _tx_col = next((c for c in ("Transaction status", "Transaction Status") if c in df.columns), None)
+    last_tx_status: dict[str, str] = {}
+
+    if _tx_col and "Order Name" in df.columns:
+        _tx_df = df[["Order Name", _tx_col]].copy()
+        _tx_df[_tx_col] = _tx_df[_tx_col].fillna("").astype(str).str.strip()
+        _tx_df = _tx_df[_tx_df[_tx_col] != ""]
+        
+        if not _tx_df.empty:
+            # Use cast to silence the type checker
+            raw_dict = _tx_df.groupby("Order Name")[_tx_col].last().to_dict()
+            last_tx_status = cast(dict[str, str], raw_dict)
+
     if "Item Name" in df.columns:
         df = df[df["Item Name"].notna() & (df["Item Name"].astype(str).str.strip() != "")]
 
@@ -531,18 +546,22 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
         if not oid:
             continue
 
-        # 出貨前取消：Fulfillment Service 空 且 Fulfillment Status == "Restocked" → 跳過
         fulfill_svc = _s(row.get("Fulfillment Service", ""))
         fulfill_stat = _s(row.get("Fulfillment Status", ""))
-        if not fulfill_svc and fulfill_stat == "Restocked":
+
+        # 未出貨，取消訂單：Fulfillment Service 為空 且 Fulfillment Status = "Restocked"/"Unfulfilled" → 跳過
+        if not fulfill_svc and fulfill_stat in ("Restocked", "Unfulfilled"):
             continue
 
-        remark = _s(row.get("Remark", ""))
-        fin_stat = _s(row.get("Financial Status", ""))
-        if "cancel" in remark.lower() or "取消訂購" in remark:
-            status = "未取貨"
-        elif "refund" in fin_stat.lower():
+        refunded_amt = _n(row.get("Refunded Amount", 0))
+        last_tx = last_tx_status.get(oid, "")
+
+        # 已出貨，退貨：Fulfillment Service 不為空 且 Refunded Amount != 0
+        if fulfill_svc and refunded_amt != 0:
             status = "退貨"
+        # 已出貨，未取貨：Fulfillment Service 不為空 且 (Fulfillment Status = "Restocked"/"Unfulfilled" 或 最後一筆 Transaction Status = "Pending")
+        elif fulfill_svc and (fulfill_stat in ("Restocked", "Unfulfilled") or last_tx == "Pending"):
+            status = "未取貨"
         else:
             status = "已完成"
 
@@ -590,12 +609,12 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
 
         coupon = (f["_order_disc"] + f["_credit"]) if not is_nontaken else 0  # 未取貨不計折扣優惠
         buyer_ship = f["_buyer_ship"]
-        logistics_diff = max(0, buyer_ship - actual_ship)
+        logistics_diff = abs(buyer_ship - actual_ship)
         ret_ship = actual_ship if is_ret else 0
 
-        # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用
+        # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用 + 物流處理費（運費差額）
         # （未取貨：只計實際運費）
-        total_cost = total_cost_item + coupon + ret_ship
+        total_cost = total_cost_item + coupon + ret_ship + logistics_diff
         profit = total_amt - total_cost
 
         item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
