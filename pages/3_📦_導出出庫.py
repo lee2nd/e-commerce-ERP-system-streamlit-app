@@ -427,12 +427,30 @@ else:
                             else f"background-color: {color}10")
         return result
 
-    styled = view_dlv.style.apply(_highlight_row, axis=1)
+    _dlv_page_size = 500
+    _dlv_total = len(view_dlv)
+    _dlv_total_pages = max(1, (_dlv_total - 1) // _dlv_page_size + 1)
+    _dlv_dl_col, _dlv_pg_col = st.columns([1, 3])
+    _dlv_csv = view_dlv.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+    _dlv_dl_col.download_button("⬇️ 下載出庫資料", data=_dlv_csv, file_name="出庫資料.csv", mime="text/csv", key="dl_dlv")
+    if _dlv_total_pages > 1:
+        _dlv_page = _dlv_pg_col.selectbox(
+            "頁碼", list(range(1, _dlv_total_pages + 1)),
+            format_func=lambda x: f"{x}/{_dlv_total_pages} 頁",
+            key="dlv_page",
+        )
+    else:
+        _dlv_page = 1
+    _dlv_start = (_dlv_page - 1) * _dlv_page_size
+    view_dlv_slice = view_dlv.iloc[_dlv_start:_dlv_start + _dlv_page_size].copy()
+
+    styled = view_dlv_slice.style.apply(_highlight_row, axis=1)
     _money_cfg = {
         c: st.column_config.NumberColumn(format="$%.2f")
-        for c in ["單價", "金額"] if c in view_dlv.columns
+        for c in ["單價", "金額"] if c in view_dlv_slice.columns
     }
     st.dataframe(styled, width='stretch', hide_index=True, column_config=_money_cfg)
+    st.caption(f"第 {_dlv_page} 頁 / 共 {_dlv_total_pages} 頁（{_dlv_total:,} 筆）")
 
 # ── 清0 出庫資料 ───────────────────────────────────────────
 st.markdown("---")

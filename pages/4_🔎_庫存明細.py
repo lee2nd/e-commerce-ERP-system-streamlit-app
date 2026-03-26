@@ -110,7 +110,23 @@ if "主貨號" in view.columns and "規格" in view.columns:
     )
     view = view.reset_index(drop=True)
 
-st.dataframe(view, width='stretch', hide_index=True)
+_inv_page_size = 500
+_inv_total = len(view)
+_inv_total_pages = max(1, (_inv_total - 1) // _inv_page_size + 1)
+_inv_dl_col, _inv_pg_col = st.columns([1, 3])
+_inv_csv = view.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+_inv_dl_col.download_button("⬇️ 下載庫存明細", data=_inv_csv, file_name="庫存明細.csv", mime="text/csv", key="dl_inv")
+if _inv_total_pages > 1:
+    _inv_page = _inv_pg_col.selectbox(
+        "頁碼", list(range(1, _inv_total_pages + 1)),
+        format_func=lambda x: f"{x}/{_inv_total_pages} 頁",
+        key="inv_page",
+    )
+else:
+    _inv_page = 1
+_inv_start = (_inv_page - 1) * _inv_page_size
+st.dataframe(view.iloc[_inv_start:_inv_start + _inv_page_size], width='stretch', hide_index=True)
+st.caption(f"第 {_inv_page} 頁 / 共 {_inv_total_pages} 頁（{_inv_total:,} 筆）")
 
 
 # ── 清0 庫存明細 ───────────────────────────────────────────

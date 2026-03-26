@@ -135,13 +135,32 @@ if not compare.empty:
         display_view = view[["平台", "平台商品名稱", "貨號", "主貨號", "入庫品名_顯示"]].rename(
             columns={"入庫品名_顯示": "入庫品名"}
         )
+
+        _cmp_page_size = 500
+        _cmp_total = len(display_view)
+        _cmp_total_pages = max(1, (_cmp_total - 1) // _cmp_page_size + 1)
+        _cmp_dl_col, _cmp_pg_col = st.columns([1, 3])
+        _cmp_csv = display_view.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+        _cmp_dl_col.download_button("⬇️ 下載對照表", data=_cmp_csv, file_name="對照表.csv", mime="text/csv", key="dl_cmp")
+        if _cmp_total_pages > 1:
+            _cmp_page = _cmp_pg_col.selectbox(
+                "頁碼", list(range(1, _cmp_total_pages + 1)),
+                format_func=lambda x: f"{x}/{_cmp_total_pages} 頁",
+                key="cmp_page",
+            )
+        else:
+            _cmp_page = 1
+        _cmp_start = (_cmp_page - 1) * _cmp_page_size
+        display_slice = display_view.iloc[_cmp_start:_cmp_start + _cmp_page_size].copy()
+
         styled_view = (
-            display_view
+            display_slice
             .style.apply(_highlight_platform, axis=1)
             .map(_highlight_unmatched, subset=["入庫品名"])
             .map(_highlight_combo, subset=["入庫品名"])
         )
         st.dataframe(styled_view, width='stretch', hide_index=True)
+        st.caption(f"第 {_cmp_page} 頁 / 共 {_cmp_total_pages} 頁（{_cmp_total:,} 筆）")
 
 else:
     st.info("對照表為空，請先至首頁「匯入平台訂單」上傳訂單資料")

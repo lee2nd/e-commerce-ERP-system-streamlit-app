@@ -67,24 +67,27 @@ with tab_storage:
     st.subheader("目前入庫資料 (後台使用)")
     storage = load_storage()
     if not storage.empty:
-        st.dataframe(storage, width="stretch", hide_index=True)
+        _stg_page_size = 500
+        _stg_total = len(storage)
+        _stg_total_pages = max(1, (_stg_total - 1) // _stg_page_size + 1)
+        _stg_dl_col, _stg_pg_col = st.columns([1, 3])
+        _stg_csv = storage.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+        _stg_dl_col.download_button("⬇️ 下載全部入庫資料", data=_stg_csv, file_name="入庫資料.csv", mime="text/csv", key="dl_stg_list")
+        if _stg_total_pages > 1:
+            _stg_page = _stg_pg_col.selectbox(
+                "頁碼", list(range(1, _stg_total_pages + 1)),
+                format_func=lambda x: f"{x}/{_stg_total_pages} 頁",
+                key="stg_list_page",
+            )
+        else:
+            _stg_page = 1
+        _stg_start = (_stg_page - 1) * _stg_page_size
+        st.dataframe(storage.iloc[_stg_start:_stg_start + _stg_page_size], width='stretch', hide_index=True)
+        st.caption(f"第 {_stg_page} 頁 / 共 {_stg_total_pages} 頁（{_stg_total:,} 筆）")
     else:
         st.info("尚未有入庫資料")
             
     st.subheader("手動 EXCEL 新增入庫")
-    st.markdown(
-        "請先下載 **入庫.xlsx** ，在 Excel 中填寫完最新資料後再上傳匯入，請勿刪到舊的資料，不然會比對不到。"
-    )
-    if TEMPLATE_PATH.exists():
-        with open(TEMPLATE_PATH, "rb") as f:
-            st.download_button(
-                label="⬇️ 下載入庫",
-                data=f,
-                file_name="入庫.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
-            )
-    else:
-        st.warning("找不到範本檔案 data/入庫.xlsx")
 
     stg_file = st.file_uploader(
         "⬆ 上傳入庫",
@@ -380,7 +383,24 @@ with tab_order:
         pdf = load_platform_orders(plat_file)
         st.markdown(f"**{plat_name}**（{len(pdf)} 筆）")
         if not pdf.empty:
-            st.dataframe(_to_arrow_safe_display_df(pdf), width="stretch", hide_index=True)
+            _p_page_size = 500
+            _p_total = len(pdf)
+            _p_total_pages = max(1, (_p_total - 1) // _p_page_size + 1)
+            _p_dl_col, _p_pg_col = st.columns([1, 3])
+            _p_csv = _to_arrow_safe_display_df(pdf).to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+            _p_dl_col.download_button(f"⬇️ 下載{plat_file}全部訂單", data=_p_csv, file_name=f"{plat_file}訂單.csv", mime="text/csv", key=f"dl_ord_{plat_file}")
+            if _p_total_pages > 1:
+                _p_page = _p_pg_col.selectbox(
+                    "頁碼", list(range(1, _p_total_pages + 1)),
+                    format_func=lambda x: f"{x}/{_p_total_pages} 頁",
+                    key=f"ord_page_{plat_file}",
+                )
+            else:
+                _p_page = 1
+            _p_start = (_p_page - 1) * _p_page_size
+            _pdf_slice = _to_arrow_safe_display_df(pdf).iloc[_p_start:_p_start + _p_page_size]
+            st.dataframe(_pdf_slice, width='stretch', hide_index=True)
+            st.caption(f"第 {_p_page} 頁 / 共 {_p_total_pages} 頁（{_p_total:,} 筆）")
         else:
             st.info(f"尚未匯入{plat_file}訂單")
 

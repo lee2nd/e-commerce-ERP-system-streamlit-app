@@ -16,6 +16,7 @@ import base64
 import time
 import requests
 import pandas as pd
+import streamlit as st
 from pathlib import Path
 
 # ── 環境判斷 ────────────────────────────────────────────────
@@ -214,6 +215,7 @@ _STORAGE_COL_MAP = {
 _STORAGE_COL_MAP_REV = {v: k for k, v in _STORAGE_COL_MAP.items()}
 
 
+@st.cache_data
 def load_storage() -> pd.DataFrame:
     df = _load_excel("入庫.xlsx")
     if not df.empty:
@@ -228,12 +230,14 @@ def save_storage(df: pd.DataFrame):
         df = df.drop_duplicates(subset=existing_cols, keep="last").reset_index(drop=True)
     out = df.rename(columns=_STORAGE_COL_MAP_REV)
     _save_excel(out, "入庫.xlsx", "chore: update 入庫.xlsx")
+    load_storage.clear()
 
 
 # ══════════════════════════════════════════════════════════════
 # 各平台訂單（{platform_name}.xlsx）
 # ══════════════════════════════════════════════════════════════
 
+@st.cache_data
 def load_platform_orders(platform_name: str) -> pd.DataFrame:
     return _load_excel(f"{platform_name}.xlsx")
 
@@ -246,6 +250,7 @@ def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataF
         combined = pd.concat([existing, new_df], ignore_index=True)
     combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
     _save_excel(combined, f"{platform_name}.xlsx", f"chore: update {platform_name}.xlsx")
+    load_platform_orders.clear()
     return combined
 
 
@@ -253,12 +258,14 @@ def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataF
 # 對照表（對照表.xlsx）
 # ══════════════════════════════════════════════════════════════
 
+@st.cache_data
 def load_compare_table() -> pd.DataFrame:
     return _load_excel("對照表.xlsx")
 
 
 def save_compare_table(df: pd.DataFrame):
     _save_excel(df, "對照表.xlsx", "chore: update 對照表.xlsx")
+    load_compare_table.clear()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -290,24 +297,28 @@ def clear_daily_report():
 # 出庫（出庫.xlsx）
 # ══════════════════════════════════════════════════════════════
 
+@st.cache_data
 def load_delivery() -> pd.DataFrame:
     return _load_excel("出庫.xlsx")
 
 
 def save_delivery(df: pd.DataFrame):
     _save_excel(df, "出庫.xlsx", "chore: update 出庫.xlsx")
+    load_delivery.clear()
 
 
 # ══════════════════════════════════════════════════════════════
 # 庫存明細（庫存明細.xlsx）
 # ══════════════════════════════════════════════════════════════
 
+@st.cache_data
 def load_inventory_details() -> pd.DataFrame:
     return _load_excel("庫存明細.xlsx")
 
 
 def save_inventory_details(df: pd.DataFrame):
     _save_excel(df, "庫存明細.xlsx", "chore: update 庫存明細.xlsx")
+    load_inventory_details.clear()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -321,6 +332,7 @@ def clear_storage():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "入庫.xlsx", "chore: clear 入庫.xlsx")
+    load_storage.clear()
 
 
 def clear_platform_orders(platform_name: str):
@@ -329,6 +341,7 @@ def clear_platform_orders(platform_name: str):
     existing = _load_excel(fname)
     cols = list(existing.columns) if not existing.empty else []
     _save_excel(pd.DataFrame(columns=cols), fname, f"chore: clear {fname}")
+    load_platform_orders.clear()
 
 
 def clear_compare_table():
@@ -338,6 +351,7 @@ def clear_compare_table():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "對照表.xlsx", "chore: clear 對照表.xlsx")
+    load_compare_table.clear()
 
 
 def clear_delivery():
@@ -347,6 +361,7 @@ def clear_delivery():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "出庫.xlsx", "chore: clear 出庫.xlsx")
+    load_delivery.clear()
 
 
 def clear_inventory_details():
@@ -357,6 +372,7 @@ def clear_inventory_details():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "庫存明細.xlsx", "chore: clear 庫存明細.xlsx")
+    load_inventory_details.clear()
 
 
 # ══════════════════════════════════════════════════════════════
