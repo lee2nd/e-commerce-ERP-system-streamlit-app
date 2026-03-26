@@ -711,6 +711,61 @@ def generate_daily_report(
 # ══════════════════════════════════════════════════════════════
 # 月報表
 # ══════════════════════════════════════════════════════════════
+
+def compute_monthly_auto_from_daily(daily_df: pd.DataFrame) -> pd.DataFrame:
+    """從日報表計算月報表的自動欄位（按年份 + 月份匯總）。"""
+    if daily_df.empty:
+        return pd.DataFrame()
+
+    df = daily_df.copy()
+    df["日期"] = pd.to_datetime(df["日期"], errors="coerce")
+    df = df.dropna(subset=["日期"])
+    if df.empty:
+        return pd.DataFrame()
+
+    df["年份"] = df["日期"].dt.year.astype(int)
+    df["月份"] = df["日期"].dt.month.astype(int)
+
+    def _s(col: str) -> pd.Series:
+        return pd.to_numeric(df[col], errors="coerce").fillna(0) if col in df.columns else pd.Series(0, index=df.index)
+
+    df["_手續費"] = _s("成交手續費") + _s("其他服務費") + _s("金流與系統處理費") + _s("發票處理費")
+
+    agg = df.groupby(["年份", "月份"]).agg(
+        營業額=("訂單金額", "sum") if "訂單金額" in df.columns else ("年份", "count"),
+        商品成本=("商品成本", "sum") if "商品成本" in df.columns else ("年份", "count"),
+        折扣優惠=("折扣優惠", "sum") if "折扣優惠" in df.columns else ("年份", "count"),
+        手續費=("_手續費", "sum"),
+    ).reset_index()
+
+    # Columns that might not exist
+    for src, dest in [("未取貨/退貨運費", "未取貨/退貨運費"),
+                      ("物流處理費（運費差額）", "物流處理費（運費差額）"),
+                      ("其他費用", "其他費用（一）")]:
+        if src in df.columns:
+            sub = df.groupby(["年份", "月份"])[src].sum().reset_index().rename(columns={src: dest})
+            agg = agg.merge(sub, on=["年份", "月份"], how="left")
+        else:
+            agg[dest] = 0
+
+    # Reset wrong columns that may have been named incorrectly above
+    if "訂單金額" not in df.columns:
+        agg["營業額"] = 0
+    if "商品成本" not in df.columns:
+        agg["商品成本"] = 0
+    if "折扣優惠" not in df.columns:
+        agg["折扣優惠"] = 0
+
+    num_cols = ["營業額", "商品成本", "折扣優惠", "手續費",
+                "未取貨/退貨運費", "物流處理費（運費差額）", "其他費用（一）"]
+    for c in num_cols:
+        if c not in agg.columns:
+            agg[c] = 0
+        agg[c] = pd.to_numeric(agg[c], errors="coerce").fillna(0).round(0).astype(int)
+
+    return agg.sort_values(["年份", "月份"]).reset_index(drop=True)
+
+
 def generate_monthly_report(daily_df: pd.DataFrame) -> pd.DataFrame:
     if daily_df.empty:
         return pd.DataFrame()

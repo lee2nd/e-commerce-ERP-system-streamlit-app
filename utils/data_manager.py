@@ -294,6 +294,28 @@ def clear_daily_report():
 
 
 # ══════════════════════════════════════════════════════════════
+# 月報表（月報表.xlsx）
+# ══════════════════════════════════════════════════════════════
+
+@st.cache_data
+def load_monthly_report() -> pd.DataFrame:
+    return _load_excel("月報表.xlsx")
+
+
+def save_monthly_report(df: pd.DataFrame):
+    _save_excel(df, "月報表.xlsx", "chore: update 月報表.xlsx")
+    load_monthly_report.clear()
+
+
+def clear_monthly_report():
+    """清空月報表，保留欄位結構。"""
+    existing = _load_excel("月報表.xlsx")
+    cols = list(existing.columns) if not existing.empty else ["年份", "月份"]
+    _save_excel(pd.DataFrame(columns=cols), "月報表.xlsx", "chore: clear 月報表.xlsx")
+    load_monthly_report.clear()
+
+
+# ══════════════════════════════════════════════════════════════
 # 出庫（出庫.xlsx）
 # ══════════════════════════════════════════════════════════════
 
