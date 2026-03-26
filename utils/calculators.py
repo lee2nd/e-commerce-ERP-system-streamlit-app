@@ -24,9 +24,10 @@ def auto_match_compare_table(
         orders_df[["平台商品名稱", "平台", "貨號"]].copy()
         .assign(貨號=lambda d: d["貨號"].astype(str).str.strip())
     )
+    _null_like = {"nan", "none", "nat", "<na>", "none", "NaN", "None"}
     sku_src = (
         sku_src[sku_src["貨號"].str.len() > 0]
-        .replace("nan", "")
+        .assign(貨號=lambda d: d["貨號"].where(~d["貨號"].str.lower().isin({s.lower() for s in _null_like}), ""))
         .query('貨號 != ""')
         .drop_duplicates(subset=["平台商品名稱", "平台"])
         .rename(columns={"貨號": "_sku"})
@@ -61,7 +62,7 @@ def auto_match_compare_table(
         df["主貨號"] = df["貨號"].apply(lambda s: s.split("-")[0] if s else "")
         df["入庫品名"] = df["貨號"].map(stg_name_map)
         df["入庫品名"] = df.apply(
-            lambda r: r["入庫品名"] if pd.notna(r["入庫品名"]) else ("未匹配" if r["貨號"] else ""),
+            lambda r: r["入庫品名"] if pd.notna(r["入庫品名"]) else "未匹配",
             axis=1,
         )
         return df
@@ -499,7 +500,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
         buyer_ship = f["_buyer_ship"]
         actual_ship = f["_actual_ship"]
         plat_ship = max(0, actual_ship - buyer_ship)
-        logistics_diff = abs(buyer_ship - actual_ship)
+        logistics_diff = max(0, buyer_ship - actual_ship)
 
         ret_ship = actual_ship if is_ret else 0
         tx_fee = sum(r["_tx_fee"] for r in rows) if not is_ret else 0
@@ -642,7 +643,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
 
         coupon = (f["_order_disc"] + f["_credit"]) if not is_nontaken else 0  # 未取貨不計折扣優惠
         buyer_ship = f["_buyer_ship"]
-        logistics_diff = abs(buyer_ship - actual_ship)
+        logistics_diff = buyer_ship - actual_ship
         ret_ship = actual_ship if is_ret else 0
 
         # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用 + 物流處理費（運費差額）

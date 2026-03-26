@@ -64,15 +64,22 @@ if not combo.empty:
 compare_mapping: dict[tuple[str, str], str] = {}
 # (平台商品名稱, 平台) → {貨號, 主貨號}
 compare_sku_mapping: dict[tuple[str, str], dict] = {}
+_NL = frozenset({"nan", "none", "nat", "<na>"})
+
+def _cs(v) -> str:
+    """Convert to clean string, treating NaN/None-like as empty."""
+    s = str(v).strip()
+    return "" if s.lower() in _NL else s
+
 if not compare.empty:
     for _, row in compare.iterrows():
-        key = (str(row.get("平台商品名稱", "")).strip(), str(row.get("平台", "")).strip())
-        stg_name = str(row.get("入庫品名", "")).strip()
+        key = (_cs(row.get("平台商品名稱", "")), _cs(row.get("平台", "")))
+        stg_name = _cs(row.get("入庫品名", ""))
         if stg_name:
             compare_mapping[key] = stg_name
         compare_sku_mapping[key] = {
-            "貨號": str(row.get("貨號", "")).strip(),
-            "主貨號": str(row.get("主貨號", "")).strip(),
+            "貨號": _cs(row.get("貨號", "")),
+            "主貨號": _cs(row.get("主貨號", "")),
         }
 
 

@@ -120,7 +120,11 @@ def parse_ruten(file) -> pd.DataFrame:
     item = df["項目"].fillna("").astype(str)
     out["平台商品名稱"] = name + "::" + spec + "::" + item
 
-    out["貨號"] = df["賣家自用料號"].astype(str).str.strip() if "賣家自用料號" in df.columns else ""
+    if "賣家自用料號" in df.columns:
+        _sku = df["賣家自用料號"].fillna("").astype(str).str.strip()
+        out["貨號"] = _sku.where(~_sku.str.lower().isin(["nan", "none", "nat", "<na>"]), "")
+    else:
+        out["貨號"] = ""
     out["數量"] = pd.to_numeric(df["數量"], errors="coerce").fillna(0).astype(int)
     out["單價"] = pd.to_numeric(df["單價"], errors="coerce").fillna(0)
     out["金額"] = out["數量"] * out["單價"]
