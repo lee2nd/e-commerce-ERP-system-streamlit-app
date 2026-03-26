@@ -500,7 +500,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
         buyer_ship = f["_buyer_ship"]
         actual_ship = f["_actual_ship"]
         plat_ship = max(0, actual_ship - buyer_ship)
-        logistics_diff = max(0, buyer_ship - actual_ship)
+        logistics_diff = -max(0, buyer_ship - actual_ship)
 
         ret_ship = actual_ship if is_ret else 0
         tx_fee = sum(r["_tx_fee"] for r in rows) if not is_ret else 0
