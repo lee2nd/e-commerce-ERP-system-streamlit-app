@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from utils.data_manager import (
     load_platform_orders,
     load_compare_table,
@@ -382,8 +383,13 @@ if st.button("🚀 導出出庫", type="primary"):
         # 每次重建，全欄位去重
         combined = new_delivery.drop_duplicates(keep="last").reset_index(drop=True)
         save_delivery(combined)
+        st.session_state["delivery_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.success(f"✅ 出庫資料已產生！共 {len(combined)} 筆")
         st.rerun()
+
+_delivery_ts = st.session_state.get("delivery_saved_at")
+if _delivery_ts:
+    st.caption(f"🕐 最後導出：{_delivery_ts}")
 
 # 顯示出庫資料
 st.subheader("📋 出庫資料")

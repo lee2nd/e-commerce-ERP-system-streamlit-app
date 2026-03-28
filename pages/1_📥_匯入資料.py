@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from pathlib import Path
 
 from utils.data_manager import (
@@ -63,6 +64,9 @@ with tab_storage:
             st.success(f"✅ 成功匯入入庫資料，新增 {_stg_result} 筆（已存在的 PK 保留舊資料）")
         else:
             st.info("✅ 匯入完成，本次檔案內的資料皆已存在（無新增）")
+    _stg_upload_ts = st.session_state.get("stg_upload_saved_at")
+    if _stg_upload_ts:
+        st.caption(f"🕐 最後匯入：{_stg_upload_ts}")
 
     st.subheader("目前入庫資料 (後台使用)")
     storage = load_storage()
@@ -193,6 +197,7 @@ with tab_storage:
                         added = len(new_stg)
                     save_storage(merged_stg)
                     st.session_state["stg_upload_success"] = added
+                    st.session_state["stg_upload_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     st.rerun()
         except Exception as e:
             st.error(f"匯入失敗：{e}")
@@ -246,6 +251,7 @@ with tab_storage:
                 )
                 save_storage(combined)
                 st.session_state["stg_success"] = True
+                st.session_state["stg_add_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 st.rerun()
 
     if "stg_dup_conflict" in st.session_state:
@@ -255,6 +261,9 @@ with tab_storage:
 
     if st.session_state.pop("stg_success", False):
         st.success("新增成功")
+    _stg_add_ts = st.session_state.get("stg_add_saved_at")
+    if _stg_add_ts:
+        st.caption(f"🕐 最後新增：{_stg_add_ts}")
 
     # 手動刪除
     st.markdown("---")
@@ -279,10 +288,14 @@ with tab_storage:
                 else:
                     save_storage(updated)
                     st.session_state["stg_del_success"] = True
+                    st.session_state["stg_del_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 st.rerun()
 
     if st.session_state.pop("stg_del_success", False):
         st.success("刪除成功")
+    _stg_del_ts = st.session_state.get("stg_del_saved_at")
+    if _stg_del_ts:
+        st.caption(f"🕐 最後刪除：{_stg_del_ts}")
     if st.session_state.pop("stg_del_notfound", False):
         st.warning("找不到符合的資料，請確認貨號與入庫日期是否正確")
 
@@ -309,6 +322,9 @@ with tab_storage:
 with tab_order:
     if st.session_state.pop("order_upload_success", None) is not None:
         st.success("✅ 訂單匯入成功")
+    _order_ts = st.session_state.get("order_saved_at")
+    if _order_ts:
+        st.caption(f"🕐 最後匯入：{_order_ts}")
 
     platform = st.selectbox("選擇平台", ["蝦皮", "露天", "官網 (EasyStore)", "MO店"], index=0)
     uploaded = st.file_uploader(
@@ -372,6 +388,7 @@ with tab_order:
                 updated = auto_match_compare_table(new, stg, compare, load_combo_sku())
                 save_compare_table(updated)
                 st.session_state["order_upload_success"] = len(new)
+                st.session_state["order_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 st.rerun()
 
         except Exception as e:

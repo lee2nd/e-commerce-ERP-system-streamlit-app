@@ -1,6 +1,7 @@
 """月報表"""
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 st.set_page_config(page_title="月報表", page_icon="📈", layout="wide")
 
@@ -162,8 +163,13 @@ if st.button("💾 儲存修改", key="save_monthly_edit"):
     base = _compute_derived(base)
     base = base[ALL_COLS]
     save_monthly_report(base)
+    st.session_state["monthly_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.success("✅ 修改已儲存，廣告費用合計、總成本與淨利已重算")
     st.rerun()
+
+_monthly_ts = st.session_state.get("monthly_saved_at")
+if _monthly_ts:
+    st.caption(f"🕐 最後儲存：{_monthly_ts}")
 
 # ── 清0 月報表 ─────────────────────────────────────────────────
 st.markdown("---")

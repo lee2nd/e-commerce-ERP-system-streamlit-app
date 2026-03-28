@@ -125,6 +125,28 @@ def _gh_write_excel(df: pd.DataFrame, filename: str, commit_msg: str):
     put_resp.raise_for_status()
 
 
+def _gh_write_raw_bytes(filename: str, file_bytes: bytes, commit_msg: str):
+    """將原始 bytes 透過 GitHub API 直接 commit 到 data/{filename}。"""
+    cfg = _gh_config()
+    headers = _gh_headers(cfg["token"])
+    api_base = (
+        f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}"
+        f"/contents/data/{filename}"
+    )
+    sha = None
+    get_resp = requests.get(api_base, headers=headers, params={"ref": cfg["branch"]}, timeout=10)
+    if get_resp.status_code == 200:
+        sha = get_resp.json().get("sha")
+    elif get_resp.status_code != 404:
+        get_resp.raise_for_status()
+    b64_content = base64.b64encode(file_bytes).decode("utf-8")
+    payload: dict = {"message": commit_msg, "content": b64_content, "branch": cfg["branch"]}
+    if sha:
+        payload["sha"] = sha
+    put_resp = requests.put(api_base, headers=headers, json=payload, timeout=20)
+    put_resp.raise_for_status()
+
+
 # ══════════════════════════════════════════════════════════════
 # 通用讀寫（CSV，本地用）
 # ══════════════════════════════════════════════════════════════
@@ -416,3 +438,60 @@ def clear_combo_sku():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "組合貨號.xlsx", "chore: clear 組合貨號.xlsx")
+
+
+# ══════════════════════════════════════════════════════════════
+# 原始 bytes 讀寫（備份 / 全覆蓋還原用）
+# ══════════════════════════════════════════════════════════════
+
+def read_raw_bytes(filename: str) -> bytes | None:
+    """讀取 DATA_DIR 內指定檔案的原始 bytes；不存在時回傳 None。"""
+    if _is_cloud():
+        cfg = _gh_config()
+        headers = _gh_headers(cfg["token"])
+        api_url = (
+            f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}"
+            f"/contents/data/{filename}"
+        )
+        resp = requests.get(api_url, headers=headers, params={"ref": cfg["branch"]}, timeout=15)
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("content"):
+            return base64.b64decode(data["content"])
+        dl_resp = requests.get(data["download_url"], headers=headers, timeout=15)
+        dl_resp.raise_for_status()
+        return dl_resp.content
+    else:
+        path = DATA_DIR / filename
+        return path.read_bytes() if path.exists() else None
+
+
+def _clear_file_cache(filename: str):
+    """清除指定檔案對應的 st.cache_data 快取。"""
+    if filename == "入庫.xlsx":
+        load_storage.clear()
+    elif filename == "出庫.xlsx":
+        load_delivery.clear()
+    elif filename == "對照表.xlsx":
+        load_compare_table.clear()
+    elif filename == "庫存明細.xlsx":
+        load_inventory_details.clear()
+    elif filename == "月報表.xlsx":
+        load_monthly_report.clear()
+    elif filename in ("蝦皮.xlsx", "露天.xlsx", "官網.xlsx"):
+        load_platform_orders.clear()
+    # 日報表.xlsx、組合貨號.xlsx 無 @st.cache_data，無需清除
+
+
+def save_raw_bytes(filename: str, file_bytes: bytes):
+    """以原始 bytes 全覆蓋指定檔案，並清除相關快取。"""
+    if _is_cloud():
+        _gh_write_raw_bytes(filename, file_bytes, f"chore: overwrite {filename} via Streamlit restore")
+        # 讓下一次 rerun 讀取到最新資料
+        df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+        st.session_state[f"_df_cache_{filename}"] = df.copy()
+    else:
+        (DATA_DIR / filename).write_bytes(file_bytes)
+    _clear_file_cache(filename)

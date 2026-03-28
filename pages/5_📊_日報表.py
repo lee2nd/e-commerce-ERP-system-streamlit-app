@@ -1,6 +1,7 @@
 """日報表"""
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from utils.data_manager import (
     load_platform_orders,
     load_compare_table, load_storage,
@@ -218,8 +219,13 @@ if st.button("💾 儲存修改", key="save_daily_edit"):
     )
 
     save_daily_report(base)
+    st.session_state["daily_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.success("✅ 修改已儲存，總成本與淨利已重新計算")
     st.rerun()
+
+_daily_ts = st.session_state.get("daily_saved_at")
+if _daily_ts:
+    st.caption(f"🕐 最後儲存：{_daily_ts}")
 
 # ── 清0 日報表 ─────────────────────────────────────────────
 st.markdown("---")
