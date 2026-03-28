@@ -200,7 +200,8 @@ def _get_order_data(row: pd.Series, platform: str) -> dict:
     except (ValueError, TypeError):
         price = 0
     
-    return {"數量": qty, "單價": price, "日期": date}
+    order_no = str(row.get("訂單編號", "")).strip()
+    return {"訂單編號": order_no, "數量": qty, "單價": price, "日期": date}
 
 
 def generate_delivery() -> pd.DataFrame:
@@ -276,6 +277,7 @@ def generate_delivery() -> pd.DataFrame:
                         comp_main = comp_info.get("主貨號", mat_sku.split("-")[0] if "-" in mat_sku else mat_sku)
                         comp_cost = comp_info.get("單位成本", 0)
                         records.append({
+                            "訂單編號": order_data["訂單編號"],
                             "主貨號": comp_main,
                             "貨號": mat_sku,
                             "名稱": comp_name,
@@ -307,6 +309,7 @@ def generate_delivery() -> pd.DataFrame:
 
             _price = round(order_data["單價"], 2)
             records.append({
+                "訂單編號": order_data["訂單編號"],
                 "主貨號": main_sku,
                 "貨號": sku,
                 "名稱": prod_name,
