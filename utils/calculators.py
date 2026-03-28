@@ -138,6 +138,7 @@ def generate_delivery(
         "單價": df["單價"],
         "金額": df["金額"],
         "日期": df["日期"],
+        "訂單編號": df["訂單編號"] if "訂單編號" in df.columns else "",
         "平台": df["平台"],
     }
     delivery = pd.DataFrame(cols_map)
@@ -317,7 +318,9 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             "_item_cost": stg_info.get("成本", 0) * effective_qty if stg_info else 0,
             "_matched": bool(stg_info),
             # order-level (take first per order)
-            "_coupon": abs(_n(row.get("賣場優惠券", 0))),
+            # 折扣優惠 = 賣家負擔優惠券（新）/ 賣場優惠券（舊）+ 賣家負擔蝦幣回饋券（新）/ 賣家蝦幣回饋券（舊）
+            "_coupon": abs(_n(row.get("賣家負擔優惠券") or row.get("賣場優惠券", 0)))
+                     + abs(_n(row.get("賣家負擔蝦幣回饋券") or row.get("賣家蝦幣回饋券", 0))),
             "_buyer_ship": _n(row.get("買家支付運費", 0)),
             "_plat_ship": _n(row.get("蝦皮補助運費", 0)),
             "_return_ship": abs(_n(row.get("退貨運費", 0))),
@@ -643,7 +646,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
 
         coupon = (f["_order_disc"] + f["_credit"]) if not is_nontaken else 0  # 未取貨不計折扣優惠
         buyer_ship = f["_buyer_ship"]
-        logistics_diff = buyer_ship - actual_ship
+        logistics_diff = actual_ship - buyer_ship
         ret_ship = actual_ship if is_ret else 0
 
         # 總成本：商品成本＋折扣優惠＋未取貨/退貨運費＋成交手續費＋其他服務費＋金流與系統處理費＋發票處理費＋其他費用 + 物流處理費（運費差額）
