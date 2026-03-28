@@ -66,11 +66,20 @@ with tab_single:
     all_years = sorted(
         delivery["年"].dropna().astype(int).unique().tolist(), reverse=True
     )
-    col_sel1, col_sel2 = st.columns([3, 1])
-    with col_sel1:
-        selected_item = st.selectbox("選擇商品（主貨號）商品名稱", item_options, key="si_item")
+    col_search, col_sel2 = st.columns([3, 1])
+    with col_search:
+        search_text = st.text_input("🔍 搜尋商品（輸入關鍵字篩選）", key="si_search", placeholder="輸入主貨號或商品名稱關鍵字…")
     with col_sel2:
         selected_year = st.selectbox("年份", all_years, key="si_year")
+
+    _kw = search_text.strip().lower()
+    filtered_items = [i for i in item_options if _kw in i.lower()] if _kw else item_options
+    if not filtered_items:
+        st.warning("無符合關鍵字的商品，請調整搜尋內容")
+        st.stop()
+    selected_item = st.selectbox(
+        f"選擇商品（共 {len(filtered_items)} 筆）", filtered_items, key="si_item"
+    )
 
     # 取出該商品、該年份的出庫資料
     mask = (delivery["_item_key"] == selected_item) & (delivery["年"] == selected_year)
