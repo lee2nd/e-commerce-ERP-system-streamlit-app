@@ -13,7 +13,6 @@ from utils.data_manager import (
     load_combo_sku, save_combo_sku, clear_combo_sku,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
-from utils.calculators import auto_match_compare_table
 
 
 def _to_arrow_safe_display_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -383,11 +382,6 @@ with tab_order:
                 if plat_file:
                     append_platform_orders(raw_preview, plat_file)
 
-                # 自動更新對照表
-                stg = load_storage()
-                compare = load_compare_table()
-                updated = auto_match_compare_table(new, stg, compare, load_combo_sku())
-                save_compare_table(updated)
                 st.session_state["order_upload_success"] = len(new)
                 st.session_state["order_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                 st.rerun()
