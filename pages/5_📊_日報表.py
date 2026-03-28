@@ -200,16 +200,18 @@ if st.button("💾 儲存修改", key="save_daily_edit"):
             base[_c] = 0
     idx = save_edit.index
 
-    # 重算物流處理費（運費差額）：依平台公式
+    # 重算物流處理費（運費差額）：依平台公式（與 calculators.py 一致）
     if "物流處理費（運費差額）" in base.columns and "平台" in base.columns:
         for i in idx:
             plat = base.at[i, "平台"]
             actual = float(base.at[i, "實際運費支出"] or 0) if "實際運費支出" in base.columns else 0 # pyright: ignore[reportArgumentType]
             buyer = float(base.at[i, "買家支付運費"] or 0) if "買家支付運費" in base.columns else 0 # pyright: ignore[reportArgumentType]
             if plat == "露天":
-                base.at[i, "物流處理費（運費差額）"] = max(0, actual - buyer)
+                # 露天：-max(0, 買家支付運費 - 實際運費支出)，負數或 0
+                base.at[i, "物流處理費（運費差額）"] = -max(0, buyer - actual)
             elif plat == "官網":
-                base.at[i, "物流處理費（運費差額）"] = max(0, buyer - actual)
+                # 官網：實際運費支出 - 買家支付運費，可正可負
+                base.at[i, "物流處理費（運費差額）"] = actual - buyer
 
     base.loc[idx, "總成本"] = sum(
         base.loc[idx, _c].fillna(0) for _c in _cost_cols

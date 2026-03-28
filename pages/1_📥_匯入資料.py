@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from pathlib import Path
 
 from utils.data_manager import (
     DATA_DIR,

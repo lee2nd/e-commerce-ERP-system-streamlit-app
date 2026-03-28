@@ -148,22 +148,6 @@ def _gh_write_raw_bytes(filename: str, file_bytes: bytes, commit_msg: str):
 
 
 # ══════════════════════════════════════════════════════════════
-# 通用讀寫（CSV，本地用）
-# ══════════════════════════════════════════════════════════════
-
-def _load_csv(name: str, **kwargs) -> pd.DataFrame:
-    path = DATA_DIR / f"{name}.csv"
-    if path.exists() and path.stat().st_size > 0:
-        return pd.read_csv(path, encoding="utf-8-sig", **kwargs)
-    return pd.DataFrame()
-
-
-def _save_csv(df: pd.DataFrame, name: str):
-    path = DATA_DIR / f"{name}.csv"
-    df.to_csv(path, index=False, encoding="utf-8-sig")
-
-
-# ══════════════════════════════════════════════════════════════
 # Excel 讀寫（本地 / 雲端自動切換）
 # ══════════════════════════════════════════════════════════════
 
@@ -199,29 +183,6 @@ def _save_excel(df: pd.DataFrame, filename: str, commit_msg: str):
     else:
         path = DATA_DIR / filename
         df.to_excel(path, index=False, engine="openpyxl")
-
-
-# ══════════════════════════════════════════════════════════════
-# 訂單（orders.xlsx）
-# ══════════════════════════════════════════════════════════════
-
-def load_orders() -> pd.DataFrame:
-    return _load_excel("orders.xlsx")
-
-
-def save_orders(df: pd.DataFrame):
-    _save_excel(df, "orders.xlsx", "chore: update orders.xlsx")
-
-
-def append_orders(new_df: pd.DataFrame) -> pd.DataFrame:
-    existing = load_orders()
-    if existing.empty:
-        combined = new_df.copy()
-    else:
-        combined = pd.concat([existing, new_df], ignore_index=True)
-        combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
-    save_orders(combined)
-    return combined
 
 
 # ══════════════════════════════════════════════════════════════

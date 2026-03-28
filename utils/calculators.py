@@ -97,56 +97,6 @@ def auto_match_compare_table(
 
 
 # ══════════════════════════════════════════════════════════════
-# 出庫紀錄
-# ══════════════════════════════════════════════════════════════
-def generate_delivery(
-    orders_df: pd.DataFrame,
-    compare_df: pd.DataFrame,
-    storage_df: pd.DataFrame,
-) -> pd.DataFrame:
-    if orders_df.empty:
-        return pd.DataFrame()
-
-    df = orders_df[~orders_df["訂單狀態"].isin(["已取消"])].copy()
-
-    # 合併對照表取得貨號 / 主貨號
-    if not compare_df.empty and "平台商品名稱" in compare_df.columns:
-        m = compare_df[["平台商品名稱", "貨號", "主貨號"]].drop_duplicates("平台商品名稱")
-        df = df.merge(m, on="平台商品名稱", how="left", suffixes=("_ord", ""))
-        if "貨號_ord" in df.columns:
-            df["貨號"] = df["貨號"].where(
-                df["貨號"].notna() & (df["貨號"] != ""), df["貨號_ord"]
-            )
-            df.drop(columns=["貨號_ord"], errors="ignore", inplace=True)
-
-    # 合併入庫取得商品名稱 / 規格
-    if not storage_df.empty and "貨號" in storage_df.columns:
-        si = storage_df[["貨號", "主貨號", "商品名稱", "規格"]].drop_duplicates("貨號")
-        df = df.merge(si, on="貨號", how="left", suffixes=("", "_stg"))
-        for c in ("主貨號", "商品名稱"):
-            sc = f"{c}_stg"
-            if sc in df.columns:
-                df[c] = df[sc].where(df[sc].notna() & (df[sc] != ""), df.get(c, ""))
-                df.drop(columns=[sc], errors="ignore", inplace=True)
-
-    cols_map = {
-        "主貨號": df.get("主貨號", ""),
-        "商品名稱": df.get("商品名稱", df["平台商品名稱"]),
-        "規格": df.get("規格", ""),
-        "貨號": df.get("貨號", ""),
-        "數量": df["數量"],
-        "單價": df["單價"],
-        "金額": df["金額"],
-        "日期": df["日期"],
-        "訂單編號": df["訂單編號"] if "訂單編號" in df.columns else "",
-        "平台": df["平台"],
-    }
-    delivery = pd.DataFrame(cols_map)
-    delivery = delivery.drop_duplicates().sort_values("日期")
-    return delivery.reset_index(drop=True)
-
-
-# ══════════════════════════════════════════════════════════════
 # 日報表
 # ══════════════════════════════════════════════════════════════
 
@@ -768,71 +718,6 @@ def compute_monthly_auto_from_daily(daily_df: pd.DataFrame) -> pd.DataFrame:
 
     return agg.sort_values(["年份", "月份"]).reset_index(drop=True)
 
-
-def generate_monthly_report(daily_df: pd.DataFrame) -> pd.DataFrame:
-    if daily_df.empty:
-        return pd.DataFrame()
-
-    df = daily_df.copy()
-    df["日期"] = pd.to_datetime(df["日期"], errors="coerce")
-    df["月份"] = df["日期"].dt.to_period("M").astype(str)
-
-    # Map new column names → monthly aggregation
-    _col = lambda name: name if name in df.columns else None
-    agg_dict = {"訂單數": ("訂單編號", "count")}
-    for col in ["訂單金額", "折扣優惠", "未取貨/退貨運費", "成交手續費", "其他服務費",
-                "金流與系統處理費", "商品成本", "總成本", "淨利",
-                # fallback old names
-                "營業額", "成本", "賣家折扣", "運費折抵", "金流服務費"]:
-        if col in df.columns:
-            agg_dict[col] = (col, "sum")
-
-    monthly = df.groupby("月份").agg(**agg_dict).reset_index()
-    for c in list(monthly.columns):
-        if c not in ("月份",):
-            monthly[c] = pd.to_numeric(monthly[c], errors="coerce").fillna(0).round(0).astype(int)
-
-    return monthly.sort_values("月份").reset_index(drop=True)
-
-
-# ══════════════════════════════════════════════════════════════
-# 庫存明細
-# ══════════════════════════════════════════════════════════════
-def generate_inventory(
-    storage_df: pd.DataFrame,
-    delivery_df: pd.DataFrame,
-) -> pd.DataFrame:
-    if storage_df.empty:
-        return pd.DataFrame()
-
-    keys = ["主貨號", "商品名稱", "規格", "貨號"]
-    for c in keys:
-        if c not in storage_df.columns:
-            return pd.DataFrame()
-
-    ss = storage_df.groupby(keys).agg(
-        進貨數量=("數量", "sum"),
-        進貨金額=("總金額", "sum"),
-        平均成本=("單位成本", "mean"),
-    ).reset_index()
-
-    if not delivery_df.empty and "貨號" in delivery_df.columns:
-        ds = delivery_df.groupby("貨號").agg(
-            銷售數量=("數量", "sum"),
-            銷售金額=("金額", "sum"),
-        ).reset_index()
-        result = ss.merge(ds, on="貨號", how="left")
-    else:
-        result = ss.copy()
-        result["銷售數量"] = 0
-        result["銷售金額"] = 0
-
-    result["銷售數量"] = result["銷售數量"].fillna(0).astype(int)
-    result["銷售金額"] = result["銷售金額"].fillna(0)
-    result["現有庫存"] = result["進貨數量"] - result["銷售數量"]
-    result["平均成本"] = result["平均成本"].round(1)
-
-    return result.reset_index(drop=True)
 
 
 # ══════════════════════════════════════════════════════════════
