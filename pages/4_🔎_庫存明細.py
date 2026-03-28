@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+TZ_TAIPEI = timezone(timedelta(hours=8))
 from utils.data_manager import (
     load_storage, load_delivery,
     load_compare_table,
@@ -68,7 +70,7 @@ if st.button("🔄 更新庫存明細", type="primary"):
                     matched_skus |= component_skus
             result = result[result["貨號"].astype(str).str.strip().isin(matched_skus)]
         save_inventory_details(result)
-        st.session_state["inventory_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state["inventory_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
         st.success(f"✅ 庫存明細已更新！共 {len(result)} 筆")
         st.rerun()
 

@@ -134,6 +134,7 @@
    - 各表格新增「⬇️ 下載」按鈕，下載對象為篩選後的完整資料（CSV UTF-8 BOM），非當頁切片
 
 4. **月報表**
+---
 
 ## 3/28 完成項目
 
@@ -166,6 +167,12 @@
    - 露天：`-max(0, 買家支付運費 − 實際運費支出)`（≤0）
    - 官網：`實際運費支出 − 買家支付運費`（可正可負）
 
+10. **時區修正（Streamlit Cloud UTC+0 → 台灣時間 UTC+8）**
+    - 問題：`datetime.now()` 與 `pd.Timestamp.now()` 在 Streamlit Cloud（UTC+0）環境下會顯示 UTC 時間，比台灣時間少 8 小時
+    - 修正方式：所有產生「最後儲存時間」的呼叫改用 `TZ_TAIPEI = timezone(timedelta(hours=8))`，即 `datetime.now(tz=TZ_TAIPEI)`
+    - 無需安裝額外套件（使用標準庫 `datetime.timezone` + `datetime.timedelta`）
+    - 影響檔案：`app.py`、`pages/1_📥_匯入資料.py`、`pages/2_📋_對照表.py`、`pages/3_📦_導出出庫.py`、`pages/4_🔎_庫存明細.py`、`pages/5_📊_日報表.py`、`pages/6_📈_月報表.py`
+    
 ## 資料概況
 - 入庫 : 1000+
 - 蝦皮 : 5000 ~ 8000 / 每月

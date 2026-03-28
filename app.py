@@ -1,7 +1,9 @@
 import io
 import zipfile
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+TZ_TAIPEI = timezone(timedelta(hours=8))
 
 def _get_rw_funcs():
     """Lazy import of read_raw_bytes / save_raw_bytes to avoid module-load crash
@@ -55,7 +57,7 @@ if st.button("🔄 產生備份 ZIP", key="gen_zip"):
                     zf.writestr(fname, raw)
         buf.seek(0)
         st.session_state["_zip_bytes"] = buf.read()
-        st.session_state["_zip_ts"] = datetime.now().strftime("%Y%m%d_%H%M%S")
+        st.session_state["_zip_ts"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y%m%d_%H%M%S")
 
 _zip_bytes = st.session_state.get("_zip_bytes")
 _zip_ts    = st.session_state.get("_zip_ts", "backup")
@@ -113,7 +115,7 @@ for fname, display_name, note in _FILE_META:
                 file_bytes = uploaded.read()
                 try:
                     save_raw_bytes(fname, file_bytes)
-                    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    ts = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                     st.session_state[f"_ow_ts_{fname}"] = ts
                     # 讓下載快取失效
                     st.session_state.pop(f"_dl_{fname}", None)

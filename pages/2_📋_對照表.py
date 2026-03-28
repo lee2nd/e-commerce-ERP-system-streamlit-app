@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 import io
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+TZ_TAIPEI = timezone(timedelta(hours=8))
 from utils.data_manager import (
     load_compare_table, save_compare_table,
     load_storage,
@@ -78,7 +80,7 @@ if st.button("🔄 重新掃描訂單（新增未匹配項目）", type="primary
         updated["_sort"] = updated["平台"].map(_plat_order).fillna(9)
         updated = updated.sort_values(["_sort", "平台商品名稱"]).drop(columns="_sort").reset_index(drop=True)
         save_compare_table(updated)
-        st.session_state["compare_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state["compare_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
         st.success(f"掃描完成！對照表共 {len(updated)} 筆")
         st.rerun()
 

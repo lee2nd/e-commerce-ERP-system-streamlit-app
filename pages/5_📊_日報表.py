@@ -1,7 +1,9 @@
 """日報表"""
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+TZ_TAIPEI = timezone(timedelta(hours=8))
 from utils.data_manager import (
     load_platform_orders,
     load_compare_table, load_storage,
@@ -221,7 +223,7 @@ if st.button("💾 儲存修改", key="save_daily_edit"):
     )
 
     save_daily_report(base)
-    st.session_state["daily_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.session_state["daily_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
     st.success("✅ 修改已儲存，總成本與淨利已重新計算")
     st.rerun()
 

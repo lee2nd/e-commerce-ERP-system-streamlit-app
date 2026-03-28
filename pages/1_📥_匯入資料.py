@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+TZ_TAIPEI = timezone(timedelta(hours=8))
 
 from utils.data_manager import (
     DATA_DIR,
@@ -166,7 +168,7 @@ with tab_storage:
                         new_stg["入庫日期"], errors="coerce"
                     ).dt.strftime("%Y-%m-%d")
                     new_stg["入庫日期"] = new_stg["入庫日期"].fillna(
-                        pd.Timestamp.now().strftime("%Y-%m-%d")
+                        pd.Timestamp.now(tz="Asia/Taipei").strftime("%Y-%m-%d")
                     )
 
                     # 保留系統需要的欄位順序
@@ -196,7 +198,7 @@ with tab_storage:
                         added = len(new_stg)
                     save_storage(merged_stg)
                     st.session_state["stg_upload_success"] = added
-                    st.session_state["stg_upload_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.session_state["stg_upload_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                     st.rerun()
         except Exception as e:
             st.error(f"匯入失敗：{e}")
@@ -250,7 +252,7 @@ with tab_storage:
                 )
                 save_storage(combined)
                 st.session_state["stg_success"] = True
-                st.session_state["stg_add_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state["stg_add_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                 st.rerun()
 
     if "stg_dup_conflict" in st.session_state:
@@ -287,7 +289,7 @@ with tab_storage:
                 else:
                     save_storage(updated)
                     st.session_state["stg_del_success"] = True
-                    st.session_state["stg_del_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.session_state["stg_del_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                 st.rerun()
 
     if st.session_state.pop("stg_del_success", False):
@@ -387,7 +389,7 @@ with tab_order:
                 updated = auto_match_compare_table(new, stg, compare, load_combo_sku())
                 save_compare_table(updated)
                 st.session_state["order_upload_success"] = len(new)
-                st.session_state["order_saved_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state["order_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                 st.rerun()
 
         except Exception as e:
