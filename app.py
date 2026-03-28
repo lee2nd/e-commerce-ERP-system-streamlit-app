@@ -3,7 +3,14 @@ import zipfile
 import streamlit as st
 from datetime import datetime
 
-from utils.data_manager import read_raw_bytes, save_raw_bytes
+def _get_rw_funcs():
+    """Lazy import of read_raw_bytes / save_raw_bytes to avoid module-load crash
+    when Streamlit Cloud has a cached older data_manager without these symbols."""
+    try:
+        from utils.data_manager import read_raw_bytes, save_raw_bytes
+        return read_raw_bytes, save_raw_bytes
+    except ImportError:
+        return None, None
 
 st.set_page_config(page_title="電商平台進銷存系統", page_icon="📊", layout="wide")
 st.title("📊 電商平台 ERP & 報表系統")
@@ -11,6 +18,15 @@ st.caption("蝦皮 ｜ 露天 ｜ 官網 (EasyStore) ｜ MO店")
 
 st.markdown("---")
 st.subheader("🗂️ 資料備份與還原")
+
+read_raw_bytes, save_raw_bytes = _get_rw_funcs()
+if read_raw_bytes is None or save_raw_bytes is None:
+    st.error(
+        "⚠️ 備份 / 還原功能尚未就緒（部署版本不符，請稍候自動重新部署或手動重新整理頁面）。"
+    )
+    st.stop()
+assert read_raw_bytes is not None
+assert save_raw_bytes is not None
 
 # 各檔案的顯示名稱與備註
 _FILE_META: list[tuple[str, str, str]] = [
