@@ -14,7 +14,7 @@ st.title("🏆 單品銷售查詢 & 銷售排行")
 delivery_raw = load_delivery()
 inventory    = load_inventory_details()
 
-_NULL_LIKE = frozenset({"nan", "none", "nat", "<na>", "", "未匹配", "tbd"})
+_NULL_LIKE = frozenset({"nan", "none", "nat", "<na>", "", "未匹配"})
 
 def _clean(v) -> str:
     s = str(v).strip() if pd.notna(v) else ""
@@ -133,7 +133,7 @@ with tab_single:
         "總淨利額": int(display_table["總淨利額"].sum()),
     }
     display_table = pd.concat([display_table, pd.DataFrame([total_row])], ignore_index=True)
-    st.dataframe(display_table, hide_index=True, width='stretch')
+    st.dataframe(display_table, hide_index=True, width='stretch', height=500)
 
     # ── 圖表 ─────────────────────────────────────────────────
     fig = go.Figure()

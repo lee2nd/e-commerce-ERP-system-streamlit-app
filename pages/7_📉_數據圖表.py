@@ -216,7 +216,7 @@ def _show_table(data: pd.DataFrame):
     total_row: dict[str, object] = {"月份": "合計"}
     for col in table.columns[1:]:
         if col == "年度平均訂單量":
-            total_row[col] = ""
+            total_row[col] = None
         else:
             total_row[col] = int(table[col].sum())
     table = pd.concat([table, pd.DataFrame([total_row])], ignore_index=True)
