@@ -9,6 +9,82 @@ app_file: app.py
 pinned: false
 ---
 
+# 📊 電商平台 ERP & 報表系統
+
+一站式電商進銷存管理系統，整合蝦皮、露天、官網 (EasyStore)、MO店等多平台訂單資料，提供即時庫存追蹤、營收報表與數據分析。
+
+## 📋 專案簡介
+
+經營多平台電商最痛苦的是什麼？每天打開 4 個後台、下載 4 份報表、手動對帳到眼花。
+
+這套系統解決的核心問題：
+- **多平台訂單整合**：一鍵匯入蝦皮、露天、官網、MO店訂單，自動轉換格式
+- **即時庫存追蹤**：入庫、出庫、組合商品自動扣庫，庫存異常一目瞭然
+- **成本與利潤計算**：自動計算商品成本、平台手續費、物流費用、淨利
+- **日報表 / 月報表**：退貨、未取貨、部份退貨等複雜情境全自動處理
+- **數據圖表分析**：營收趨勢、平台佔比、單品銷售排行，輔助經營決策
+
+## 🛠️ 技術堆疊 (Tech Stack)
+
+| 類別 | 技術 |
+|------|------|
+| **語言** | Python 3.10+ |
+| **前端框架** | Streamlit |
+| **資料處理** | Pandas, NumPy |
+| **視覺化** | Plotly |
+| **檔案格式** | Excel (openpyxl) |
+| **部署平台** | Hugging Face Spaces / Streamlit Community Cloud |
+
+## 📸 系統截圖
+
+<!-- 請將截圖放置於 image/README/ 資料夾，並將真實營業數據打碼 -->
+
+| 首頁 | 日報表 | 數據圖表 | 單品銷售查詢 | 銷售排行 |
+|:----:|:------:|:--------:|:------------------:|:--------:|
+| ![首頁](![1776008205872](image/README/1776008205872.png)) | ![日報表](![1776008251776](image/README/1776008251776.png)) | ![數據圖表](![1776008284007](image/README/1776008284007.png)) | ![單品銷售查詢](![1776008389199](image/README/1776008389199.png)) | ![銷售排行](![1776008442797](image/README/1776008442797.png)) |
+
+
+## 🚀 環境建置指南
+
+### 1. clone 專案
+```bash
+git clone https://github.com/lee2nd/e-commerce-ERP-system-streamlit-app.git
+cd e-commerce-ERP-system-streamlit-app
+```
+
+### 2. 建立虛擬環境（建議）
+```bash
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
+```
+
+### 3. 安裝依賴套件
+```bash
+pip install -r requirements.txt
+```
+
+### 4. 執行應用程式
+```bash
+streamlit run app.py
+```
+
+應用程式將在 `http://localhost:8501` 啟動。
+
+### 5. 部署至 Hugging Face Spaces
+1. Fork 本專案至你的 GitHub
+2. 在 [Hugging Face Spaces](https://huggingface.co/spaces) 建立新 Space
+3. 選擇 Streamlit SDK，連結你的 GitHub repo
+4. 等待自動部署完成
+
+---
+
+## 📝 更新日誌
+
 ## 3/1 & 3/7 完成項目
 
 1. 刪除雅虎平台，新增 mo 店 / easystore
