@@ -3,6 +3,7 @@ import zipfile
 import psutil
 import os
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, timezone, timedelta
 
 TZ_TAIPEI = timezone(timedelta(hours=8))
@@ -16,6 +17,10 @@ def _get_rw_funcs():
         return None, None
 
 st.set_page_config(page_title="電商平台進銷存系統", page_icon="📊", layout="wide")
+
+# 每 3 分鐘發送 keep-alive 訊號，防止 Hugging Face Spaces 閒置斷線
+st_autorefresh(interval=3 * 60 * 1000, key="keep_alive")
+
 st.title("📊 電商平台 ERP & 報表系統")
 st.caption("蝦皮 ｜ 露天 ｜ 官網 (EasyStore) ｜ MO店")
 

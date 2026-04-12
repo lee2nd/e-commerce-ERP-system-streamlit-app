@@ -276,6 +276,11 @@ pinned: false
    - 移除未使用的變數：`app.py` 中的 `_sys_mem`、`日報表.py` 中的 `_PLAT_COLORS`
    - 移除未使用的套件：`requirements.txt` 中的 `lxml`（程式碼中無任何引用）
 
+21. **防止 Hugging Face Spaces 閒置斷線**
+   - 問題：Hugging Face Spaces 負載平衡器在偵測到 WebSocket 閒置一段時間後，會強制切斷連線，導致網頁反灰或顯示斷線
+   - 解法 A（Keep-alive）：`requirements.txt` 加入 `streamlit-autorefresh`；`app.py` 在 `set_page_config` 後呼叫 `st_autorefresh(interval=3 * 60 * 1000, key="keep_alive")`，每 3 分鐘在背景發送訊號保持連線
+   - 解法 B（停用 WebSocket 壓縮）：新增 `.streamlit/config.toml`，設定 `enableWebsocketCompression = false`，避免代理伺服器誤判連線狀態
+
 ## CICD Issues
 1. 顯示隱藏的項目的 .git folder 刪掉
 ![1775995966402](image/README/1775995966402.png)
