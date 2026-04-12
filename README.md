@@ -360,8 +360,6 @@ streamlit run app.py
 
 ## CICD Issues
 1. 顯示隱藏的項目的 .git folder 刪掉
-![1775995966402](image/README/1775995966402.png)
-
 2. 先把 github 上面的 data folder 最新資料下載下來，放在本地專案的 data 資料夾中（極重要）
 3. 重新初始化一個乾淨的 Git
 git init
