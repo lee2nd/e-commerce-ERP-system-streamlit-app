@@ -12,6 +12,8 @@ from utils.data_manager import (
 )
 
 st.set_page_config(page_title="導出出庫", page_icon="📦", layout="wide")
+from utils.styles import apply_global_styles
+apply_global_styles()
 st.title("📦 導出出庫")
 
 TZ_TAIPEI = timezone(timedelta(hours=8))

@@ -18,6 +18,9 @@ def _get_rw_funcs():
 
 st.set_page_config(page_title="電商平台進銷存系統", page_icon="📊", layout="wide")
 
+from utils.styles import apply_global_styles
+apply_global_styles()
+
 # 每 3 分鐘發送 keep-alive 訊號，防止 Hugging Face Spaces 閒置斷線
 st_autorefresh(interval=3 * 60 * 1000, key="keep_alive")
 

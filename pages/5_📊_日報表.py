@@ -12,6 +12,8 @@ from utils.calculators import generate_daily_report
 
 TZ_TAIPEI = timezone(timedelta(hours=8))
 st.set_page_config(page_title="日報表", page_icon="📊", layout="wide")
+from utils.styles import apply_global_styles
+apply_global_styles()
 st.title("📊 日報表")
 
 settings = {

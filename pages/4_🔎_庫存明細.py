@@ -36,6 +36,8 @@ def extract_color(spec: str) -> str:
     return spec_text.strip()
 
 st.set_page_config(page_title="庫存明細", page_icon="🔎", layout="wide")
+from utils.styles import apply_global_styles
+apply_global_styles()
 st.title("🔎 庫存明細")
 
 if st.button("🔄 更新庫存明細", type="primary"):

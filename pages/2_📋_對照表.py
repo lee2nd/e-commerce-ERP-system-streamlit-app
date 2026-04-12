@@ -13,6 +13,8 @@ from utils.parsers import parse_shopee, parse_ruten, parse_easystore
 from utils.calculators import auto_match_compare_table
 
 st.set_page_config(page_title="對照表", page_icon="📋", layout="wide")
+from utils.styles import apply_global_styles
+apply_global_styles()
 st.title("📋 對照表")
 
 TZ_TAIPEI = timezone(timedelta(hours=8))

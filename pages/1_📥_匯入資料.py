@@ -13,6 +13,9 @@ from utils.data_manager import (
     load_combo_sku, save_combo_sku, clear_combo_sku,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
+from utils.styles import apply_global_styles
+
+apply_global_styles()
 
 
 def _to_arrow_safe_display_df(df: pd.DataFrame) -> pd.DataFrame:

@@ -10,6 +10,8 @@ from utils.calculators import compute_monthly_auto_from_daily
 
 TZ_TAIPEI = timezone(timedelta(hours=8))
 st.set_page_config(page_title="月報表", page_icon="📈", layout="wide")
+from utils.styles import apply_global_styles
+apply_global_styles()
 st.title("📈 月報表")
 
 # ── 欄位定義 ──────────────────────────────────────────────────
