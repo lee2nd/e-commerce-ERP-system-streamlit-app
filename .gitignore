@@ -36,3 +36,10 @@ Thumbs.db
 
 
 *.xlsx
+
+# README 截圖（二進位檔案，不追蹤）
+image/README/*.png
+image/README/*.jpg
+image/README/*.jpeg
+image/README/*.gif
+image/README/*.webp

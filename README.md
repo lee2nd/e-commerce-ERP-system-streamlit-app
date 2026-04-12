@@ -41,8 +41,7 @@ pinned: false
 
 | 首頁 | 日報表 | 數據圖表 | 單品銷售查詢 | 銷售排行 |
 |:----:|:------:|:--------:|:------------------:|:--------:|
-| ![首頁](![1776008205872](image/README/1776008205872.png)) | ![日報表](![1776008251776](image/README/1776008251776.png)) | ![數據圖表](![1776008284007](image/README/1776008284007.png)) | ![單品銷售查詢](![1776008389199](image/README/1776008389199.png)) | ![銷售排行](![1776008442797](image/README/1776008442797.png)) |
-
+| ![首頁](image/README/1776008205872.png) | ![日報表](image/README/1776008251776.png) | ![數據圖表](image/README/1776008284007.png) | ![單品銷售查詢](image/README/1776008389199.png) | ![銷售排行](image/README/1776008442797.png) |
 
 ## 🚀 環境建置指南
 
@@ -52,7 +51,7 @@ git clone https://github.com/lee2nd/e-commerce-ERP-system-streamlit-app.git
 cd e-commerce-ERP-system-streamlit-app
 ```
 
-### 2. 建立虛擬環境（建議）
+### 2. 建立虛擬環境並啟動
 ```bash
 python -m venv .venv
 
