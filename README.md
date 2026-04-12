@@ -276,6 +276,26 @@ pinned: false
    - 移除未使用的變數：`app.py` 中的 `_sys_mem`、`日報表.py` 中的 `_PLAT_COLORS`
    - 移除未使用的套件：`requirements.txt` 中的 `lxml`（程式碼中無任何引用）
 
+## CICD Issues
+1. 顯示隱藏的項目的 .git folder 刪掉
+![1775995966402](image/README/1775995966402.png)
+
+2. 先把 github 上面的 data folder 最新資料下載下來，放在本地專案的 data 資料夾中（極重要）
+3. 重新初始化一個乾淨的 Git
+git init
+git add .
+git commit -m "Clean history without Excel files"
+
+4. 把分支名稱設定為 main
+git branch -M main
+
+5. 重新連上你的 GitHub
+git remote add origin https://github.com/lee2nd/e-commerce-ERP-system-streamlit-app.git
+
+6. 強制覆蓋 GitHub 上的舊紀錄 (加上 -f)
+git push -f origin main
+7. publish branch main 到 GitHub
+
 ## 資料概況
 - 存放 2~3 年的資料
 - 入庫 : 1000+
