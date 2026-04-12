@@ -16,6 +16,15 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
+
+      # 移除 data/ 資料夾（HF Space 透過 GitHub API 讀寫，不需要本地資料）
+      - name: Remove data folder before push
+        run: |
+          git rm -rf --cached data/ || true
+          rm -rf data/
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git commit --allow-empty -m "Exclude data folder for HF deployment"
           
       - name: Push to hub
         env:
