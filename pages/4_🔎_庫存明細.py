@@ -9,6 +9,7 @@ from utils.data_manager import (
     load_combo_sku,
 )
 from utils.calculators import generate_inventory_details
+from utils.styles import apply_global_styles
 
 SIZE_ORDER = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]
 SIZE_RANK = {s: i for i, s in enumerate(SIZE_ORDER)}
@@ -36,7 +37,7 @@ def extract_color(spec: str) -> str:
     return spec_text.strip()
 
 st.set_page_config(page_title="庫存明細", page_icon="🔎", layout="wide")
-from utils.styles import apply_global_styles
+
 apply_global_styles()
 st.title("🔎 庫存明細")
 

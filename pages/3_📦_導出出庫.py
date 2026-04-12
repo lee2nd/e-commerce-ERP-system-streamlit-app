@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone, timedelta
+from utils.styles import apply_global_styles
 from utils.data_manager import (
     load_platform_orders,
     load_compare_table,
@@ -12,7 +13,7 @@ from utils.data_manager import (
 )
 
 st.set_page_config(page_title="導出出庫", page_icon="📦", layout="wide")
-from utils.styles import apply_global_styles
+
 apply_global_styles()
 st.title("📦 導出出庫")
 

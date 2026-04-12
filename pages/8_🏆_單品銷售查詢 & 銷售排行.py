@@ -1,7 +1,8 @@
 ﻿"""單品銷售查詢 & 銷售排行"""
 import streamlit as st
-st.set_page_config(page_title="單品銷售查詢 & 銷售排行", page_icon="🏆", layout="wide")
 from utils.styles import apply_global_styles
+
+st.set_page_config(page_title="單品銷售查詢 & 銷售排行", page_icon="🏆", layout="wide")
 apply_global_styles()
 
 import pandas as pd

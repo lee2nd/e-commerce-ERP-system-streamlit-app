@@ -4,9 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from utils.data_manager import load_daily_report, load_monthly_report
+from utils.styles import apply_global_styles
 
 st.set_page_config(page_title="數據圖表", page_icon="📉", layout="wide")
-from utils.styles import apply_global_styles
+
 apply_global_styles()
 st.info("⚠️ 請確認日、月報表都修改完畢")
 st.title("📉 數據圖表")

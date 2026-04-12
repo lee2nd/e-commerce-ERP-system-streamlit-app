@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone, timedelta
+from utils.styles import apply_global_styles
 from utils.data_manager import (
     load_daily_report,
     load_monthly_report, save_monthly_report, clear_monthly_report,
@@ -10,7 +11,7 @@ from utils.calculators import compute_monthly_auto_from_daily
 
 TZ_TAIPEI = timezone(timedelta(hours=8))
 st.set_page_config(page_title="月報表", page_icon="📈", layout="wide")
-from utils.styles import apply_global_styles
+
 apply_global_styles()
 st.title("📈 月報表")
 

@@ -86,7 +86,7 @@ streamlit run app.py
 
 ## 📝 更新日誌
 
-## 3/1 & 3/7 完成項目
+### 3/1 & 3/7 完成項目
 
 1. 刪除雅虎平台，新增 mo 店 / easystore
 2. 刪除分類 A/B 報表，統一合併為一個報表
@@ -357,6 +357,11 @@ streamlit run app.py
    - 問題：Hugging Face Spaces 負載平衡器在偵測到 WebSocket 閒置一段時間後，會強制切斷連線，導致網頁反灰或顯示斷線
    - 解法 A（Keep-alive）：`requirements.txt` 加入 `streamlit-autorefresh`；`app.py` 在 `set_page_config` 後呼叫 `st_autorefresh(interval=3 * 60 * 1000, key="keep_alive")`，每 3 分鐘在背景發送訊號保持連線
    - 解法 B（停用 WebSocket 壓縮）：新增 `.streamlit/config.toml`，設定 `enableWebsocketCompression = false`，避免代理伺服器誤判連線狀態
+
+22. **UI 優化更新**
+- 視覺風格升級：導入全域 CSS 樣式集，優化按鈕、卡片、標籤頁與滾動條視覺效果。
+- 介面一致性：統一各頁面的標題層級與間距，提升操作體驗。
+- 主題配色：自定義 `config.toml` 主題配色，採用更專業的深藍與簡潔白背景。
 
 ## CICD Issues
 1. 顯示隱藏的項目的 .git folder 刪掉
