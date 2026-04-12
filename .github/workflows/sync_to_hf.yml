@@ -1,0 +1,23 @@
+name: Sync to Hugging Face hub
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'data/**'       # app 透過 GitHub API 寫入資料時不觸發同步
+
+  # 允許手動觸發此工作流程
+  workflow_dispatch:
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          lfs: true
+          
+      - name: Push to hub
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: git push --force https://lee2nd:$HF_TOKEN@huggingface.co/spaces/lee2nd/my-erp main
