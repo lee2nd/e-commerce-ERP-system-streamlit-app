@@ -63,6 +63,8 @@ if read_raw_bytes is None or save_raw_bytes is None:
 assert read_raw_bytes is not None
 assert save_raw_bytes is not None
 
+from utils.data_manager import delete_all_data, restore_from_zip
+
 # 各檔案的顯示名稱與備註
 _FILE_META: list[tuple[str, str, str]] = [
     ("入庫.xlsx",    "入庫資料",    "原有合併上傳功能請至【📥 匯入資料】頁面"),
@@ -106,6 +108,77 @@ if _zip_bytes:
         key="dl_zip",
     )
     st.caption(f"ZIP 產生時間：{_zip_ts}")
+
+st.markdown("---")
+
+# ── 一鍵上傳 ZIP 還原 ────────────────────────────────────────
+st.markdown("#### ⬆️ 一鍵上傳 ZIP 還原")
+st.info("上傳先前下載的備份 ZIP，會將 ZIP 內所有 .xlsx 檔案一次還原（覆蓋現有資料）。")
+
+_uploaded_zip = st.file_uploader(
+    "選擇備份 ZIP 檔",
+    type=["zip"],
+    key="upload_restore_zip",
+)
+if _uploaded_zip:
+    st.warning("⚠️ 確認後將以 ZIP 內的檔案**全面覆蓋**現有資料，操作無法復原！")
+    if st.button("✅ 確認上傳還原", key="confirm_restore_zip", type="primary"):
+        try:
+            zip_data = _uploaded_zip.read()
+            restored = restore_from_zip(zip_data)
+            if restored:
+                # 清除舊的下載快取
+                for _f, *_ in _FILE_META:
+                    st.session_state.pop(f"_dl_{_f}", None)
+                st.session_state.pop("_zip_bytes", None)
+                ts = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state["_toast_restore"] = f"✅ 已還原 {len(restored)} 個檔案：{', '.join(restored)}（{ts}）"
+                st.rerun()
+            else:
+                st.warning("ZIP 內沒有找到任何 .xlsx 檔案")
+        except Exception as e:
+            st.error(f"還原失敗：{e}")
+
+_t = st.session_state.pop("_toast_restore", None)
+if _t:
+    st.success(_t)
+
+st.markdown("---")
+
+# ── 一鍵全刪 ─────────────────────────────────────────────────
+st.markdown("#### 🗑️ 一鍵刪除全部資料")
+st.error("⚠️ 此操作會**永久刪除**所有資料檔案，無法復原！請務必先下載備份 ZIP。")
+
+_col_del1, _col_del2 = st.columns([1, 3])
+with _col_del1:
+    _confirm_text = st.text_input(
+        "請輸入「確認刪除」以啟用按鈕",
+        key="delete_all_confirm_text",
+        placeholder="確認刪除",
+    )
+with _col_del2:
+    st.markdown("")  # 佔位對齊
+    if st.button(
+        "🗑️ 刪除全部資料",
+        key="btn_delete_all",
+        type="primary",
+        disabled=(_confirm_text != "確認刪除"),
+    ):
+        with st.spinner("刪除中…"):
+            deleted = delete_all_data()
+        # 清除所有下載快取
+        for _f, *_ in _FILE_META:
+            st.session_state.pop(f"_dl_{_f}", None)
+        st.session_state.pop("_zip_bytes", None)
+        if deleted:
+            st.session_state["_toast_delete"] = ("success", f"✅ 已刪除 {len(deleted)} 個檔案：{', '.join(deleted)}")
+        else:
+            st.session_state["_toast_delete"] = ("info", "目前沒有資料檔案需要刪除")
+        st.rerun()
+
+_t = st.session_state.pop("_toast_delete", None)
+if _t:
+    (st.success if _t[0] == "success" else st.info)(_t[1])
 
 st.markdown("---")
 
@@ -161,7 +234,7 @@ for fname, display_name, note in _FILE_META:
                     # 讓下載快取失效
                     st.session_state.pop(f"_dl_{fname}", None)
                     st.session_state.pop("_zip_bytes", None)
-                    st.success(f"✅ 「{display_name}」已全覆蓋上傳！")
+                    st.session_state[f"_toast_ow_{fname}"] = f"✅ 「{display_name}」已全覆蓋上傳！（{ts}）"
                     st.rerun()
                 except Exception as e:
                     st.error(f"上傳失敗：{e}")
@@ -169,3 +242,7 @@ for fname, display_name, note in _FILE_META:
         _ow_ts = st.session_state.get(f"_ow_ts_{fname}")
         if _ow_ts:
             st.caption(f"🕐 最後覆蓋：{_ow_ts}")
+
+    _t = st.session_state.pop(f"_toast_ow_{fname}", None)
+    if _t:
+        st.success(_t)

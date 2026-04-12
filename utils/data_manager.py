@@ -479,3 +479,85 @@ def save_raw_bytes(filename: str, file_bytes: bytes):
     else:
         (DATA_DIR / filename).write_bytes(file_bytes)
     _clear_file_cache(filename)
+
+
+def _clear_all_caches():
+    """清除所有 st.cache_data 快取。"""
+    load_storage.clear()
+    load_delivery.clear()
+    load_compare_table.clear()
+    load_inventory_details.clear()
+    load_monthly_report.clear()
+    load_daily_report.clear()
+    load_combo_sku.clear()
+    load_platform_orders.clear()
+
+
+def _gh_delete_file(filename: str):
+    """透過 GitHub API 刪除 data/{filename}。"""
+    cfg = _gh_config()
+    headers = _gh_headers(cfg["token"])
+    api_url = (
+        f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}"
+        f"/contents/data/{filename}"
+    )
+    get_resp = requests.get(api_url, headers=headers, params={"ref": cfg["branch"]}, timeout=10)
+    if get_resp.status_code == 404:
+        return  # 檔案不存在，略過
+    get_resp.raise_for_status()
+    sha = get_resp.json()["sha"]
+    payload = {
+        "message": f"chore: delete {filename} via Streamlit reset",
+        "sha": sha,
+        "branch": cfg["branch"],
+    }
+    del_resp = requests.delete(api_url, headers=headers, json=payload, timeout=20)
+    del_resp.raise_for_status()
+
+
+def delete_all_data():
+    """刪除 DATA_DIR 下所有 .xlsx 檔案（本地直接刪檔，雲端透過 GitHub API）。"""
+    files = [f for f, *_ in [
+        ("入庫.xlsx",), ("出庫.xlsx",), ("對照表.xlsx",), ("庫存明細.xlsx",),
+        ("日報表.xlsx",), ("月報表.xlsx",), ("組合貨號.xlsx",),
+        ("蝦皮.xlsx",), ("露天.xlsx",), ("官網.xlsx",),
+    ]]
+    deleted = []
+    if _is_cloud():
+        for fname in files:
+            try:
+                _gh_delete_file(fname)
+                deleted.append(fname)
+            except Exception:
+                pass  # 刪除失敗的檔案略過
+    else:
+        for fname in files:
+            path = DATA_DIR / fname
+            if path.exists():
+                path.unlink()
+                deleted.append(fname)
+    _clear_all_caches()
+    # 同步清除 session_state 中的 df_cache
+    for fname in files:
+        st.session_state.pop(f"_df_cache_{fname}", None)
+    return deleted
+
+
+def restore_from_zip(zip_bytes: bytes) -> list[str]:
+    """從 ZIP 檔還原所有 .xlsx 檔案到 DATA_DIR，回傳已還原的檔名清單。"""
+    import zipfile as _zipfile
+    restored: list[str] = []
+    with _zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+        for name in zf.namelist():
+            # 只處理 .xlsx，忽略子目錄或其他檔案
+            if not name.endswith(".xlsx"):
+                continue
+            # 取得純檔名（忽略 ZIP 內的路徑）
+            basename = name.split("/")[-1].split("\\")[-1]
+            if not basename:
+                continue
+            file_bytes = zf.read(name)
+            save_raw_bytes(basename, file_bytes)
+            restored.append(basename)
+    _clear_all_caches()
+    return restored
