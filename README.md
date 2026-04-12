@@ -37,11 +37,13 @@ pinned: false
 
 ## 📸 系統截圖
 
-<!-- 請將截圖放置於 image/README/ 資料夾，並將真實營業數據打碼 -->
+| 首頁 | 日報表 | 數據圖表 |
+|:----:|:------:|:--------:|
+| ![首頁](https://github.com/user-attachments/assets/e4fa0cc5-95d1-45c6-8696-193c629ea45a) | ![日報表](https://github.com/user-attachments/assets/e5c7e692-958b-4425-ae6e-9130491742c0) | ![數據圖表](https://github.com/user-attachments/assets/294d2d5b-82bd-4107-b0b2-dc095ba2b898) |
 
-| 首頁 | 日報表 | 數據圖表 | 單品銷售查詢 | 銷售排行 |
-|:----:|:------:|:--------:|:------------------:|:--------:|
-| ![首頁](image/README/1776008205872.png) | ![日報表](image/README/1776008251776.png) | ![數據圖表](image/README/1776008284007.png) | ![單品銷售查詢](image/README/1776008389199.png) | ![銷售排行](image/README/1776008442797.png) |
+| 單品銷售查詢 | 銷售排行 |
+|:------------------:|:--------:|
+| ![單品銷售查詢](https://github.com/user-attachments/assets/d7ed27ae-8050-43a6-84ad-2405d0ad3ada) | ![銷售排行](https://github.com/user-attachments/assets/9bebaa39-6499-41f0-aca3-9da44e13ab55) |
 
 ## 🚀 環境建置指南
 
