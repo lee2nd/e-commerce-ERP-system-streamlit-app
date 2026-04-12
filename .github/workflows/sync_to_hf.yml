@@ -14,17 +14,20 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0
-          lfs: true
+          fetch-depth: 1    # 淺 clone，不帶歷史
+          lfs: false        # 不需要 LFS
 
-      # 移除 data/ 資料夾（HF Space 透過 GitHub API 讀寫，不需要本地資料）
-      - name: Remove data folder before push
+      # 建立乾淨的 orphan branch，完全不帶 data/ 與舊歷史
+      - name: Create clean branch without data folder
         run: |
-          git rm -rf --cached data/ || true
           rm -rf data/
+          rm -rf .git
+          git init
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git commit --allow-empty -m "Exclude data folder for HF deployment"
+          git checkout -b main
+          git add .
+          git commit -m "Deploy to HF (without data folder)"
           
       - name: Push to hub
         env:
