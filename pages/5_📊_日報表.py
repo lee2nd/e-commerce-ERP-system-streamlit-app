@@ -121,7 +121,7 @@ if pd.notna(min_d) and pd.notna(max_d):
 else:
     date_range = None
 
-unmatched_filter = cf4.radio("是否未匹配", options=["全部", "未匹配", "已匹配"], horizontal=True)
+unmatched_filter = cf4.radio("匹配狀態", options=["全部", "未匹配", "已匹配"], horizontal=True)
 
 view = daily.copy()
 view = view[view["平台"].isin(plat_filter)]
