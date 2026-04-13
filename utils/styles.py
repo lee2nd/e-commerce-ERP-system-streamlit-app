@@ -157,8 +157,12 @@ h3 {
 /* ── DataFrame ──────────────────────────────────────────── */
 [data-testid="stDataFrame"] {
     border-radius: 10px !important;
-    overflow: hidden !important;
     border: 1px solid #e2e8f0 !important;
+}
+/* 只對內部 canvas/iframe 容器裁切，讓 toolbar（搜尋 icon）可正常顯示 */
+[data-testid="stDataFrame"] > div:first-child {
+    border-radius: 10px !important;
+    overflow: hidden !important;
 }
 
 /* ── Select / Input 圓角 ─────────────────────────────────── */
