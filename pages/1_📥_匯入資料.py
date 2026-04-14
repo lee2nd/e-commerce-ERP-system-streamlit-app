@@ -2,12 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 
-TZ_TAIPEI = timezone(timedelta(hours=8))
-
 from utils.data_manager import (
     DATA_DIR,
     load_storage, save_storage,
-    load_compare_table, save_compare_table,
     load_platform_orders, append_platform_orders,
     clear_storage, clear_platform_orders,
     load_combo_sku, save_combo_sku, clear_combo_sku,
@@ -15,6 +12,7 @@ from utils.data_manager import (
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
 from utils.styles import apply_global_styles
 
+TZ_TAIPEI = timezone(timedelta(hours=8))
 apply_global_styles()
 
 
@@ -189,9 +187,9 @@ with tab_storage:
                     existing_stg = load_storage()
                     if not existing_stg.empty:
                         existing_keys = set(
-                            existing_stg["貨號"].astype(str) + "||" + existing_stg["入庫日期"].astype(str)
+                            existing_stg["貨號"].astype(str).str.cat(existing_stg["入庫日期"].astype(str), sep="||")
                         )
-                        new_keys = new_stg["貨號"].astype(str) + "||" + new_stg["入庫日期"].astype(str)
+                        new_keys = new_stg["貨號"].astype(str).str.cat(new_stg["入庫日期"].astype(str), sep="||")
                         truly_new = new_stg[~new_keys.isin(existing_keys)]
                         merged_stg = pd.concat([existing_stg, truly_new], ignore_index=True)
                         added = len(truly_new)

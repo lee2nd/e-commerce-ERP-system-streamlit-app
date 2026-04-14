@@ -206,7 +206,7 @@ def _make_chart(data: pd.DataFrame, year: int) -> go.Figure:
     # Horizontal line – 年度平均訂單量（左軸）
     fig.add_trace(
         go.Scatter(
-            name=f"年度平均訂單量",
+            name="年度平均訂單量",
             x=MONTHS_LABEL,
             y=data["_avg_line"].tolist(),
             mode="lines",

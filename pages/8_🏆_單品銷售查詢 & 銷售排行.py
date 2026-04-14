@@ -1,15 +1,13 @@
 ﻿"""單品銷售查詢 & 銷售排行"""
 import streamlit as st
 from utils.styles import apply_global_styles
-
-st.set_page_config(page_title="單品銷售查詢 & 銷售排行", page_icon="🏆", layout="wide")
-apply_global_styles()
-
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from utils.data_manager import load_delivery, load_inventory_details
 
+st.set_page_config(page_title="單品銷售查詢 & 銷售排行", page_icon="🏆", layout="wide")
+apply_global_styles()
 st.title("🏆 單品銷售查詢 & 銷售排行")
 
 # ── 載入資料 ───────────────────────────────────────────────────

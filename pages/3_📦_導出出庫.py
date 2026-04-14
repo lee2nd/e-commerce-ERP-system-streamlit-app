@@ -163,16 +163,16 @@ def _build_platform_key(row: pd.Series, platform: str) -> str:
     if platform == "蝦皮":
         name = str(row.get("商品名稱", "")).strip()
         spec = str(row.get("商品選項名稱", "")).strip()
-        return f"{name}::{spec}" if spec else name
+        return f"{name}::{spec}"
     elif platform == "露天":
         name = str(row.get("商品名稱", "")).strip()
         spec1 = str(row.get("規格", "")).strip()
         spec2 = str(row.get("項目", "")).strip()
-        return f"{name}::{spec1}::{spec2}" if spec1 or spec2 else name
+        return f"{name}::{spec1}::{spec2}"
     elif platform == "官網":
         name = str(row.get("Item Name", "")).strip()
         variant = str(row.get("Item Variant", "")).strip()
-        return f"{name}::{variant}" if variant else name
+        return f"{name}::{variant}"
     return ""
 
 
@@ -216,6 +216,20 @@ def _get_order_data(row: pd.Series, platform: str) -> dict:
     return {"訂單編號": order_no, "數量": qty, "單價": price, "日期": date}
 
 
+def _get_row_sku(row: pd.Series, platform: str) -> str:
+    """取得訂單行的原始 SKU，用於驗證是否在入庫中"""
+    _nl = {"nan", "none", "nat", "<na>"}
+    if platform == "蝦皮":
+        raw = str(row.get("商品選項貨號", "")).strip() or str(row.get("主商品貨號", "")).strip()
+    elif platform == "露天":
+        raw = str(row.get("賣家自用料號", "")).strip()
+    elif platform == "官網":
+        raw = str(row.get("Item SKU", "")).strip()
+    else:
+        raw = ""
+    return "" if raw.lower() in _nl else raw
+
+
 def generate_delivery() -> pd.DataFrame:
     """產生出庫資料"""
     records = []
@@ -242,9 +256,9 @@ def generate_delivery() -> pd.DataFrame:
             
             # 查對照表取得入庫品名
             stg_name = compare_mapping.get((plat_key, platform), "")
-            # 入庫品名為空且不是"未匹配"：對照表內完全沒有這筆訂單記錄，跳過
+            # 入庫品名為空：對照表內完全沒有這筆訂單記錄，視為未匹配
             if not stg_name:
-                continue
+                stg_name = "未匹配"
 
             if stg_name == "未匹配":
                 # 入庫品名為未匹配：用平台原始資料
@@ -314,7 +328,29 @@ def generate_delivery() -> pd.DataFrame:
                 sku_info = stg_mapping.get(stg_name, {})
                 sku = sku_info.get("貨號", "")
                 main_sku = sku_info.get("主貨號", "")
-                is_unmatched = False
+                is_unmatched = not bool(sku_info)
+
+                # 進一步驗證：對照表雖顯示已匹配（名稱找到），但訂單原始 SKU 不在入庫中
+                # → 視為未匹配，與日報表邏輯保持一致
+                if not is_unmatched:
+                    raw_order_sku = _get_row_sku(row, platform)
+                    if raw_order_sku and raw_order_sku not in stg_sku_lookup:
+                        _combo_codes = set(combo["組合貨號"].astype(str).str.strip()) if not combo.empty else set()
+                        if raw_order_sku not in _combo_codes:
+                            if platform == "蝦皮":
+                                prod_name = str(row.get("商品名稱", "")).strip()
+                                prod_spec = str(row.get("商品選項名稱", "")).strip()
+                            elif platform == "露天":
+                                prod_name = str(row.get("商品名稱", "")).strip()
+                                _s1 = str(row.get("規格", "")).strip()
+                                _s2 = str(row.get("項目", "")).strip()
+                                prod_spec = f"{_s1}::{_s2}".strip("::") if _s1 or _s2 else ""
+                            elif platform == "官網":
+                                prod_name = str(row.get("Item Name", "")).strip()
+                                prod_spec = str(row.get("Item Variant", "")).strip()
+                            sku = raw_order_sku
+                            main_sku = raw_order_sku.split("-")[0] if "-" in raw_order_sku else raw_order_sku
+                            is_unmatched = True
 
             # 取得訂單資料
             order_data = _get_order_data(row, platform)
