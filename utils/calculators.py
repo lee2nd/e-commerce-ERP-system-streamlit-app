@@ -19,18 +19,17 @@ def auto_match_compare_table(
 
     result_cols = ["平台商品名稱", "平台", "入庫品名", "貨號", "主貨號"]
 
-    # ── 從訂單取 貨號：同一個(平台商品名稱, 平台) 取第一個非空 SKU ──
-    sku_src = (
+    # ── 從訂單收集所有唯一 (平台商品名稱, 平台, 貨號) 組合（不先做 per-product 去重）──
+    _null_like = {"nan", "none", "nat", "<na>", "none", "NaN", "None"}
+    sku_all = (
         orders_df[["平台商品名稱", "平台", "貨號"]].copy()
         .assign(貨號=lambda d: d["貨號"].astype(str).str.strip())
     )
-    _null_like = {"nan", "none", "nat", "<na>", "none", "NaN", "None"}
-    sku_src = (
-        sku_src[sku_src["貨號"].str.len() > 0]
+    sku_all = (
+        sku_all[sku_all["貨號"].str.len() > 0]
         .assign(貨號=lambda d: d["貨號"].where(~d["貨號"].str.lower().isin({s.lower() for s in _null_like}), ""))
         .query('貨號 != ""')
-        .drop_duplicates(subset=["平台商品名稱", "平台"], keep="last")
-        .rename(columns={"貨號": "_sku"})
+        .drop_duplicates(subset=["平台商品名稱", "平台", "貨號"])
     )
 
     # ── 從入庫建立 貨號 → 入庫品名 的映射 ──
@@ -55,7 +54,18 @@ def auto_match_compare_table(
                 )
                 stg_name_map[combo_code] = f"組合:{parts}"
 
-    def _enrich(df: pd.DataFrame) -> pd.DataFrame:        
+    # ── 為每個 (平台商品名稱, 平台) 選出代表 SKU ──
+    # 若同一商品有多個 SKU（跨不同訂單），優先選「不在入庫中」的 SKU，
+    # 確保對照表能正確顯示「未匹配」，與日報表邏輯一致
+    _sku_records = []
+    for (prod_name, plat), grp in sku_all.groupby(["平台商品名稱", "平台"], sort=False):
+        skus = grp["貨號"].tolist()
+        unmatched_skus = [s for s in skus if s not in stg_name_map]
+        chosen = unmatched_skus[0] if unmatched_skus else skus[-1]
+        _sku_records.append({"平台商品名稱": prod_name, "平台": plat, "_sku": chosen})
+    sku_src = pd.DataFrame(_sku_records) if _sku_records else pd.DataFrame(columns=["平台商品名稱", "平台", "_sku"])
+
+    def _enrich(df: pd.DataFrame) -> pd.DataFrame:
         df = df.merge(sku_src, on=["平台商品名稱", "平台"], how="left")
         df["貨號"] = df["_sku"].fillna("").astype(str)
         df.drop(columns=["_sku"], errors="ignore", inplace=True)
