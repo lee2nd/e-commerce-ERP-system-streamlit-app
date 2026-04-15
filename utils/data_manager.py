@@ -240,6 +240,16 @@ def load_platform_orders(platform_name: str) -> pd.DataFrame:
 
 
 def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataFrame:
+    # ── 檔案內部去重：同列完全相同時，數量欄 sum 合併 ──
+    _qty_col = next((c for c in new_df.columns if c in ("數量", "Quantity")), None)
+    if _qty_col and not new_df.empty:
+        group_cols = [c for c in new_df.columns if c != _qty_col]
+        new_df = (
+            new_df.groupby(group_cols, dropna=False, sort=False)
+            .agg({_qty_col: "sum"})
+            .reset_index()[new_df.columns.tolist()]
+        )
+
     existing = load_platform_orders(platform_name)
     if existing.empty:
         combined = new_df.copy()
