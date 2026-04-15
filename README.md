@@ -398,6 +398,11 @@ streamlit run app.py
    - 跨次匯入的去重（`drop_duplicates`）維持不變，不受影響
    - 適用三個平台（蝦皮、露天、官網）
 
+2. **匯入資料分頁卡頓效能修正（組合貨號 & 自建訂單）**
+   - 問題：切換至「組合貨號」或「自建訂單」分頁時明顯卡頓
+   - 根本原因：Streamlit tab 並非懶載入，每次互動都會重跑整個腳本；`tab_custom` 中的 `to_excel(..., engine="openpyxl")` 序列化非常耗時，不論在哪個分頁操作都會執行
+   - 修正：新增 `@st.cache_data` 包裝的 `_df_to_excel_bytes()` 函式，對 DataFrame 做雜湊，僅在資料實際變更時重新序列化，其他情況直接回傳快取 bytes
+
 ## CICD Issues
 1. 顯示隱藏的項目的 .git folder 刪掉
 2. 先把 github 上面的 data folder 最新資料下載下來，放在本地專案的 data 資料夾中（極重要）
