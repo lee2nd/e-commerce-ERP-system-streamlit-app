@@ -10,6 +10,7 @@ from utils.data_manager import (
     save_delivery,
     clear_delivery,
     load_combo_sku,
+    load_custom_orders,
 )
 
 st.set_page_config(page_title="導出出庫", page_icon="📦", layout="wide")
@@ -369,7 +370,49 @@ def generate_delivery() -> pd.DataFrame:
                 "匹配狀態": "未匹配" if is_unmatched else "已匹配",
                 "平台": platform,
             })
-    
+
+    # ── 自建訂單出庫 ──────────────────────────────────────────────
+    custom_raw = load_custom_orders()
+    if not custom_raw.empty:
+        _skip_cust = {"退貨", "未取貨"}
+        for _, row in custom_raw.iterrows():
+            _status = str(row.get("訂單狀態", "已完成")).strip()
+            if _status in _skip_cust:
+                continue
+            _sku = str(row.get("貨號", "")).strip()
+            if not _sku or _sku.lower() in {"nan", "none", ""}:
+                continue
+            try:
+                _qty = int(row.get("數量", 0)) if pd.notna(row.get("數量")) else 0
+            except (ValueError, TypeError):
+                _qty = 0
+            if _qty == 0:
+                continue
+            try:
+                _price = float(row.get("單價", 0)) if pd.notna(row.get("單價")) else 0.0
+            except (ValueError, TypeError):
+                _price = 0.0
+            _date = str(row.get("日期", ""))[:10].replace("/", "-")
+            _oid = str(row.get("訂單編號", "")).strip()
+            _stg_info = stg_sku_lookup.get(_sku, {})
+            _prod_name = _stg_info.get("名稱", "") if _stg_info else ""
+            _prod_spec = _stg_info.get("規格", "") if _stg_info else ""
+            _main_sku = _stg_info.get("主貨號", _sku.split("-")[0] if "-" in _sku else _sku) if _stg_info else (_sku.split("-")[0] if "-" in _sku else _sku)
+            _is_unmatched = not bool(_stg_info)
+            records.append({
+                "訂單編號": _oid,
+                "主貨號": _main_sku,
+                "貨號": _sku,
+                "名稱": _prod_name,
+                "規格": _prod_spec,
+                "出庫數量": _qty,
+                "單價": round(_price, 2),
+                "金額": round(_qty * _price, 2),
+                "出庫日期": _date,
+                "匹配狀態": "未匹配" if _is_unmatched else "已匹配",
+                "平台": "其他",
+            })
+
     if records:
         df = pd.DataFrame(records)
         # 統一日期格式後依日期排序（兼容 YYYY/MM/DD 與 YYYY-MM-DD）
@@ -386,9 +429,9 @@ def generate_delivery() -> pd.DataFrame:
 existing_delivery = load_delivery()
 if not existing_delivery.empty:
 
-    colors = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
+    colors = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "其他": "#F39C12"}
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("總筆數", len(existing_delivery))
     c2.metric("總金額", f"${existing_delivery['金額'].sum():,.0f}")
 
@@ -412,6 +455,9 @@ if not existing_delivery.empty:
     # 5. 官網
     official_count = len(existing_delivery[existing_delivery["平台"] == "官網"])
     custom_metric("官網", official_count, colors["官網"], c5)
+    # 6. 其他（自建）
+    other_count = len(existing_delivery[existing_delivery["平台"] == "其他"])
+    custom_metric("其他", other_count, colors["其他"], c6)
 
 
 # 顯示對照表匹配狀態
@@ -481,7 +527,7 @@ else:
     view_dlv = view_dlv[_cols]
 
     # 平台顏色標註
-    _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
+    _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "其他": "#F39C12"}
 
     def _highlight_row(row):
         color = _PLAT_COLORS.get(row.get("平台", ""), "")

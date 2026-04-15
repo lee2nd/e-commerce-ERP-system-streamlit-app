@@ -7,6 +7,7 @@ from utils.data_manager import (
     load_inventory_details, save_inventory_details,
     clear_inventory_details,
     load_combo_sku,
+    load_custom_orders,
 )
 from utils.calculators import generate_inventory_details
 from utils.styles import apply_global_styles
@@ -69,6 +70,16 @@ if st.button("🔄 更新庫存明細", type="primary"):
                         ].astype(str).str.strip()
                     )
                     matched_skus |= component_skus
+            # 自建訂單的貨號也須納入庫存明細（退貨/未取貨除外）
+            custom_ord = load_custom_orders()
+            if not custom_ord.empty and "貨號" in custom_ord.columns:
+                _skip_st = {"退貨", "未取貨"}
+                _valid_cust_skus = set(
+                    custom_ord[
+                        ~custom_ord["訂單狀態"].fillna("").astype(str).isin(_skip_st)
+                    ]["貨號"].astype(str).str.strip()
+                ) - {"", "nan"}
+                matched_skus |= _valid_cust_skus
             result = result[result["貨號"].astype(str).str.strip().isin(matched_skus)]
         save_inventory_details(result)
         st.session_state["inventory_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")

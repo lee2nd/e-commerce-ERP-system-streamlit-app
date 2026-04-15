@@ -6,7 +6,7 @@ from utils.data_manager import (
     load_platform_orders,
     load_compare_table, load_storage,
     load_daily_report, save_daily_report, clear_daily_report,
-    load_combo_sku,
+    load_combo_sku, load_custom_orders,
 )
 from utils.calculators import generate_daily_report
 from utils.styles import apply_global_styles
@@ -32,8 +32,9 @@ if st.button("🔄 重新產生日報表", type="primary"):
     shopee_raw    = load_platform_orders("蝦皮")
     ruten_raw     = load_platform_orders("露天")
     easystore_raw = load_platform_orders("官網")
+    custom_raw    = load_custom_orders()
 
-    if shopee_raw.empty and ruten_raw.empty and easystore_raw.empty:
+    if shopee_raw.empty and ruten_raw.empty and easystore_raw.empty and custom_raw.empty:
         st.warning("無訂單資料，請先至「匯入資料」頁面匯入平台訂單")
     else:
         compare = load_compare_table()
@@ -42,6 +43,7 @@ if st.button("🔄 重新產生日報表", type="primary"):
             daily = generate_daily_report(
                 shopee_raw, ruten_raw, easystore_raw,
                 compare, storage, settings, load_combo_sku(),
+                custom_raw=custom_raw if not custom_raw.empty else None,
             )
         if daily.empty:
             st.warning("計算結果為空，請確認資料是否正確")

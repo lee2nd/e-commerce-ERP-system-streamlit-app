@@ -8,6 +8,8 @@ from utils.data_manager import (
     load_platform_orders, append_platform_orders,
     clear_storage, clear_platform_orders,
     load_combo_sku, save_combo_sku, clear_combo_sku,
+    load_custom_orders, save_custom_orders, clear_custom_orders,
+    _CUSTOM_ORDER_COLS,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
 from utils.styles import apply_global_styles
@@ -50,7 +52,7 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════
 # Tab 切換
 # ══════════════════════════════════════════════════════════════
-tab_storage, tab_order, tab_combo = st.tabs(["📥 匯入入庫資料", "📦 匯入平台訂單", "🔗 組合貨號"])
+tab_storage, tab_order, tab_custom, tab_combo = st.tabs(["📥 匯入入庫資料", "📦 匯入平台訂單", "📝 匯入自建訂單", "🔗 組合貨號"])
 
 # ══════════════════════════════════════════════════════════════
 # Tab 1 – 匯入入庫資料
@@ -436,7 +438,256 @@ with tab_order:
             st.rerun()
 
 # ══════════════════════════════════════════════════════════════
-# Tab 3 – 組合貨號
+# Tab 3 – 匯入自建訂單
+# ══════════════════════════════════════════════════════════════
+with tab_custom:
+    _cust_result = st.session_state.pop("custom_upload_success", None)
+    if _cust_result is not None:
+        if _cust_result > 0:
+            st.success(f"✅ 成功匯入自建訂單，新增 {_cust_result} 筆")
+        else:
+            st.info("✅ 匯入完成，本次檔案內的資料皆已存在（無新增）")
+    _cust_upload_ts = st.session_state.get("custom_upload_saved_at")
+    if _cust_upload_ts:
+        st.caption(f"🕐 最後匯入：{_cust_upload_ts}")
+
+    st.subheader("目前自建訂單")
+    custom_orders = load_custom_orders()
+    if not custom_orders.empty:
+        _cust_page_size = 500
+        _cust_total = len(custom_orders)
+        _cust_total_pages = max(1, (_cust_total - 1) // _cust_page_size + 1)
+        _cust_dl_col, _cust_pg_col = st.columns([1, 3])
+        _cust_xlsx_buf = __import__("io").BytesIO()
+        custom_orders.to_excel(_cust_xlsx_buf, index=False, engine="openpyxl")
+        _cust_dl_col.download_button("⬇️ 下載自建訂單", data=_cust_xlsx_buf.getvalue(), file_name="自建訂單.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_custom_list")
+        if _cust_total_pages > 1:
+            _cust_page = _cust_pg_col.selectbox(
+                "頁碼", list(range(1, _cust_total_pages + 1)),
+                format_func=lambda x: f"{x}/{_cust_total_pages} 頁",
+                key="custom_list_page",
+            )
+        else:
+            _cust_page = 1
+        _cust_start = (_cust_page - 1) * _cust_page_size
+        st.dataframe(
+            _to_arrow_safe_display_df(custom_orders).iloc[_cust_start:_cust_start + _cust_page_size],
+            width='stretch', hide_index=True,
+        )
+        st.caption("欄位說明：小計＝數量×單價、費用小記＝折扣優惠＋實際運費－買家支付運費＋未取貨/退貨運費＋其他費用、訂單總金額＝小計－費用小記")
+        st.caption(f"第 {_cust_page} 頁 / 共 {_cust_total_pages} 頁（{_cust_total:,} 筆）")
+    else:
+        st.info("尚未有自建訂單")
+
+    # ── Excel 匯入 ──
+    st.markdown("---")
+    st.subheader("Excel 匯入自建訂單")
+    cust_file = st.file_uploader(
+        "⬆ 上傳自建訂單",
+        type=["xlsx", "xls", "csv"],
+        key="custom_upload",
+    )
+
+    if cust_file:
+        try:
+            raw_cust = read_file_flexible(cust_file)
+            st.markdown("#### 預覽上傳的資料")
+            st.dataframe(raw_cust, width="stretch", hide_index=True)
+
+            required_cols = ["日期", "平台名稱", "訂單編號", "訂單狀態", "貨號", "數量", "單價"]
+            missing = [c for c in required_cols if c not in raw_cust.columns]
+            if missing:
+                st.error(f"缺少必要欄位：{', '.join(missing)}")
+            elif st.button("🚀 確認匯入自建訂單", type="primary"):
+                new_cust = raw_cust.copy()
+                # 確保數值欄位型態
+                new_cust["數量"] = pd.to_numeric(new_cust["數量"], errors="coerce").fillna(0).astype(int)
+                new_cust["單價"] = pd.to_numeric(new_cust["單價"], errors="coerce").fillna(0)
+                new_cust["小計"] = new_cust["數量"] * new_cust["單價"]
+                for _fc in ["折扣優惠", "買家支付運費", "實際運費", "未取貨/退貨運費", "其他費用"]:
+                    if _fc not in new_cust.columns:
+                        new_cust[_fc] = 0
+                    new_cust[_fc] = pd.to_numeric(new_cust[_fc], errors="coerce").fillna(0)
+                new_cust["費用小記"] = (
+                    new_cust["折扣優惠"] + new_cust["實際運費"] - new_cust["買家支付運費"]
+                    + new_cust["未取貨/退貨運費"] + new_cust["其他費用"]
+                )
+                new_cust["訂單總金額"] = new_cust["小計"] - new_cust["費用小記"]
+                new_cust["日期"] = pd.to_datetime(new_cust["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+                for _sc in ["平台名稱", "訂單編號", "訂單狀態", "貨號"]:
+                    if _sc in new_cust.columns:
+                        new_cust[_sc] = new_cust[_sc].astype(str).str.strip()
+                # 補齊可能缺少的文字欄位
+                for _tc in ["買家姓名", "買家帳號"]:
+                    if _tc not in new_cust.columns:
+                        new_cust[_tc] = ""
+                # 只保留標準欄位
+                new_cust = new_cust[[c for c in _CUSTOM_ORDER_COLS if c in new_cust.columns]]
+
+                # 去重合併
+                existing_cust = load_custom_orders()
+                if not existing_cust.empty:
+                    existing_keys = set(
+                        existing_cust["訂單編號"].astype(str) + "||"
+                        + existing_cust["貨號"].astype(str) + "||"
+                        + existing_cust["日期"].astype(str)
+                    )
+                    new_keys = (
+                        new_cust["訂單編號"].astype(str) + "||"
+                        + new_cust["貨號"].astype(str) + "||"
+                        + new_cust["日期"].astype(str)
+                    )
+                    truly_new = new_cust[~new_keys.isin(existing_keys)]
+                    merged = pd.concat([existing_cust, truly_new], ignore_index=True)
+                    added = len(truly_new)
+                else:
+                    merged = new_cust
+                    added = len(new_cust)
+                save_custom_orders(merged)
+                st.session_state["custom_upload_success"] = added
+                st.session_state["custom_upload_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
+                st.rerun()
+        except Exception as e:
+            st.error(f"匯入失敗：{e}")
+
+    # ── 網頁新增自建訂單 ──
+    st.markdown("---")
+    st.subheader("網頁新增自建訂單")
+
+    _STATUS_OPTIONS = ["已完成", "退貨", "損失賠償", "未取貨"]
+
+    default_row = pd.DataFrame([{
+        "日期": pd.Timestamp.now().normalize(),
+        "平台名稱": "其他",
+        "訂單編號": "",
+        "訂單狀態": "已完成",
+        "買家姓名": "",
+        "買家帳號": "",
+        "貨號": "",
+        "數量": 1,
+        "單價": 0,
+        "折扣優惠": 0,
+        "買家支付運費": 0,
+        "實際運費": 0,
+        "未取貨/退貨運費": 0,
+        "其他費用": 0,
+    }])
+
+    _cust_editor_cfg = {
+        "日期": st.column_config.DateColumn("日期", format="YYYY-MM-DD", required=True),
+        "平台名稱": st.column_config.TextColumn("平台名稱", required=True),
+        "訂單編號": st.column_config.TextColumn("訂單編號", required=True),
+        "訂單狀態": st.column_config.SelectboxColumn("訂單狀態", options=_STATUS_OPTIONS, required=True),
+        "買家姓名": st.column_config.TextColumn("買家姓名"),
+        "買家帳號": st.column_config.TextColumn("買家帳號"),
+        "貨號": st.column_config.TextColumn("貨號", required=True),
+        "數量": st.column_config.NumberColumn("數量", min_value=1, step=1, required=True),
+        "單價": st.column_config.NumberColumn("單價", min_value=0, step=1, required=True),
+        "折扣優惠": st.column_config.NumberColumn("折扣優惠", min_value=0, step=1),
+        "買家支付運費": st.column_config.NumberColumn("買家支付運費", min_value=0, step=1),
+        "實際運費": st.column_config.NumberColumn("實際運費", min_value=0, step=1),
+        "未取貨/退貨運費": st.column_config.NumberColumn("未取貨/退貨運費", min_value=0, step=1),
+        "其他費用": st.column_config.NumberColumn("其他費用", min_value=0, step=1),
+    }
+
+    edited_custom = st.data_editor(
+        default_row,
+        num_rows="dynamic",
+        width='stretch',
+        hide_index=True,
+        key="custom_order_editor",
+        column_config=_cust_editor_cfg,
+    )
+
+    if st.button("💾 儲存自建訂單", type="primary", key="save_custom_order"):
+        valid = edited_custom[
+            edited_custom["訂單編號"].fillna("").astype(str).str.strip() != ""
+        ].copy()
+        if valid.empty:
+            st.error("請至少填寫一筆訂單（訂單編號不可為空）")
+        else:
+            valid["數量"] = pd.to_numeric(valid["數量"], errors="coerce").fillna(0).astype(int)
+            valid["單價"] = pd.to_numeric(valid["單價"], errors="coerce").fillna(0)
+            valid["小計"] = valid["數量"] * valid["單價"]
+            for _fc in ["折扣優惠", "買家支付運費", "實際運費", "未取貨/退貨運費", "其他費用"]:
+                valid[_fc] = pd.to_numeric(valid[_fc], errors="coerce").fillna(0)
+            valid["費用小記"] = (
+                valid["折扣優惠"] + valid["實際運費"] - valid["買家支付運費"]
+                + valid["未取貨/退貨運費"] + valid["其他費用"]
+            )
+            valid["訂單總金額"] = valid["小計"] - valid["費用小記"]
+            valid["日期"] = pd.to_datetime(valid["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+            for _sc in ["平台名稱", "訂單編號", "訂單狀態", "貨號", "買家姓名", "買家帳號"]:
+                if _sc in valid.columns:
+                    valid[_sc] = valid[_sc].fillna("").astype(str).str.strip()
+            valid = valid[[c for c in _CUSTOM_ORDER_COLS if c in valid.columns]]
+
+            existing_cust = load_custom_orders()
+            merged = pd.concat([existing_cust, valid], ignore_index=True) if not existing_cust.empty else valid
+            save_custom_orders(merged)
+            st.session_state["custom_add_success"] = True
+            st.session_state["custom_add_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
+            st.rerun()
+
+    if st.session_state.pop("custom_add_success", False):
+        st.success("✅ 自建訂單新增成功")
+    _cust_add_ts = st.session_state.get("custom_add_saved_at")
+    if _cust_add_ts:
+        st.caption(f"🕐 最後新增：{_cust_add_ts}")
+
+    # ── 刪除自建訂單 ──
+    st.markdown("---")
+    st.subheader("刪除自建訂單")
+    with st.form("del_custom", clear_on_submit=True):
+        d1 = st.columns(2)
+        del_cust_oid = d1[0].text_input("訂單編號")
+        del_cust_date = d1[1].date_input("日期")
+        if st.form_submit_button("🗑️ 刪除"):
+            if not del_cust_oid:
+                st.warning("請輸入訂單編號")
+            else:
+                existing_cust = load_custom_orders()
+                del_date_str = str(del_cust_date)
+                mask = ~(
+                    (existing_cust["訂單編號"].astype(str) == del_cust_oid) &
+                    (existing_cust["日期"].astype(str) == del_date_str)
+                )
+                updated = existing_cust[mask].reset_index(drop=True)
+                if len(updated) == len(existing_cust):
+                    st.session_state["custom_del_notfound"] = True
+                else:
+                    save_custom_orders(updated)
+                    st.session_state["custom_del_success"] = True
+                    st.session_state["custom_del_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
+                st.rerun()
+
+    if st.session_state.pop("custom_del_success", False):
+        st.success("刪除成功")
+    _cust_del_ts = st.session_state.get("custom_del_saved_at")
+    if _cust_del_ts:
+        st.caption(f"🕐 最後刪除：{_cust_del_ts}")
+    if st.session_state.pop("custom_del_notfound", False):
+        st.warning("找不到符合的資料，請確認訂單編號與日期是否正確")
+
+    # ── 清除所有自建訂單 ──
+    st.markdown("---")
+    if st.button("🗑️ 清除所有自建訂單", key="clear_custom_btn"):
+        st.session_state["confirm_clear_custom"] = True
+    if st.session_state.get("confirm_clear_custom"):
+        st.warning("⚠️ 確定要清除所有自建訂單嗎？此操作無法復原！")
+        _c1, _c2 = st.columns(2)
+        if _c1.button("✅ 確認清除", key="confirm_clear_custom_yes", type="primary"):
+            with st.spinner("清除中…"):
+                clear_custom_orders()
+            st.session_state.pop("confirm_clear_custom", None)
+            st.success("✅ 自建訂單已清除")
+            st.rerun()
+        if _c2.button("❌ 取消", key="confirm_clear_custom_no"):
+            st.session_state.pop("confirm_clear_custom", None)
+            st.rerun()
+
+# ══════════════════════════════════════════════════════════════
+# Tab 4 – 組合貨號
 # ══════════════════════════════════════════════════════════════
 with tab_combo:
     st.subheader("🔗 組合貨號管理")

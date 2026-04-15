@@ -8,6 +8,7 @@ from utils.data_manager import (
     load_platform_orders,
     clear_compare_table,
     load_combo_sku,
+    load_custom_orders,
 )
 from utils.parsers import parse_shopee, parse_ruten, parse_easystore
 from utils.calculators import auto_match_compare_table
@@ -70,16 +71,31 @@ if st.button("🔄 重新掃描訂單", type="primary"):
                 parts.append(parser(buf))
             except Exception:
                 pass
+    # 自建訂單：轉換為統一格式加入掃描
+    _cust_raw = load_custom_orders()
+    if not _cust_raw.empty and "貨號" in _cust_raw.columns:
+        _cust_orders = pd.DataFrame()
+        _cust_orders["訂單編號"] = _cust_raw["訂單編號"].astype(str)
+        _cust_orders["日期"] = pd.to_datetime(_cust_raw["日期"], errors="coerce")
+        _cust_orders["平台"] = "其他"
+        _cust_orders["平台商品名稱"] = _cust_raw["貨號"].fillna("").astype(str).str.strip()
+        _cust_orders["貨號"] = _cust_raw["貨號"].fillna("").astype(str).str.strip()
+        _cust_orders["數量"] = pd.to_numeric(_cust_raw.get("數量", 0), errors="coerce").fillna(0).astype(int) # type: ignore
+        _cust_orders["單價"] = pd.to_numeric(_cust_raw.get("單價", 0), errors="coerce").fillna(0) # type: ignore
+        _cust_orders["金額"] = _cust_orders["數量"] * _cust_orders["單價"]
+        _cust_orders["賣家折扣"] = 0
+        _cust_orders["訂單狀態"] = _cust_raw.get("訂單狀態", "已完成")
+        parts.append(_cust_orders)
     if parts:
         orders = pd.concat(parts, ignore_index=True)
     else:
         orders = pd.DataFrame()
     if orders.empty:
-        st.warning("無訂單資料可匹配，請先至首頁匯入平台訂單")
+        st.warning("無訂單資料可匹配，請先至首頁匯入平台訂單或自建訂單")
     else:
         updated = auto_match_compare_table(orders, storage, compare, load_combo_sku())
         # 依平台排序
-        _plat_order = {"蝦皮": 0, "露天": 1, "官網": 2}
+        _plat_order = {"蝦皮": 0, "露天": 1, "官網": 2, "其他": 3}
         updated["_sort"] = updated["平台"].map(_plat_order).fillna(9)
         updated = updated.sort_values(["_sort", "平台商品名稱"]).drop(columns="_sort").reset_index(drop=True)
         save_compare_table(updated)
@@ -114,7 +130,7 @@ if not compare.empty:
     if view.empty:
         st.info("沒有符合條件的項目")
     else:
-        _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71"}
+        _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "其他": "#F39C12"}
 
         # 建立顯示用的 入庫品名 欄位：組合商品顯示 [組合] 並附上原料名稱
         def _format_stg_name(row):
@@ -146,6 +162,8 @@ if not compare.empty:
         display_view = view[["平台", "平台商品名稱", "貨號", "主貨號", "入庫品名_顯示"]].rename(
             columns={"入庫品名_顯示": "入庫品名"}
         )
+        # 其他平台的平台商品名稱顯示為空白
+        display_view.loc[view["平台"] == "其他", "平台商品名稱"] = ""
 
         _cmp_page_size = 500
         _cmp_total = len(display_view)

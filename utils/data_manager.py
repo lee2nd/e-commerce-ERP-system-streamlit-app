@@ -422,6 +422,35 @@ def clear_combo_sku():
 
 
 # ══════════════════════════════════════════════════════════════
+# 自建訂單（自建訂單.xlsx）
+# ══════════════════════════════════════════════════════════════
+
+_CUSTOM_ORDER_COLS = [
+    "日期", "平台名稱", "訂單編號", "訂單狀態", "買家姓名", "買家帳號",
+    "貨號", "數量", "單價", "小計", "折扣優惠", "買家支付運費",
+    "實際運費", "未取貨/退貨運費", "其他費用", "費用小記", "訂單總金額",
+]
+
+
+@st.cache_data(ttl=300)
+def load_custom_orders() -> pd.DataFrame:
+    return _load_excel("自建訂單.xlsx")
+
+
+def save_custom_orders(df: pd.DataFrame):
+    _save_excel(df, "自建訂單.xlsx", "chore: update 自建訂單.xlsx")
+    load_custom_orders.clear()
+
+
+def clear_custom_orders():
+    """清空自建訂單，保留欄位結構。"""
+    existing = _load_excel("自建訂單.xlsx")
+    cols = list(existing.columns) if not existing.empty else _CUSTOM_ORDER_COLS
+    _save_excel(pd.DataFrame(columns=cols), "自建訂單.xlsx", "chore: clear 自建訂單.xlsx")
+    load_custom_orders.clear()
+
+
+# ══════════════════════════════════════════════════════════════
 # 原始 bytes 讀寫（備份 / 全覆蓋還原用）
 # ══════════════════════════════════════════════════════════════
 

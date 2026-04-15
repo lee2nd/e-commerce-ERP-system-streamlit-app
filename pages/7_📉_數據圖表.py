@@ -40,12 +40,13 @@ if not selected_years:
     st.stop()
 
 # ── 常數 ──────────────────────────────────────────────────────
-PLATFORMS = ["蝦皮", "露天", "官網", "MO店"]
+PLATFORMS = ["蝦皮", "露天", "官網", "MO店", "其他"]
 PLAT_COLORS = {
     "蝦皮": "#FF6B35",
     "露天": "#4A90D9",
     "官網": "#2ECC71",
     "MO店": "#AB63FA",
+    "其他": "#F39C12",
 }
 MONTHS_LABEL = [f"{m}月" for m in range(1, 13)]
 
