@@ -1,4 +1,3 @@
-import io
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone, timedelta
@@ -20,13 +19,6 @@ apply_global_styles()
 
 
 @st.cache_data
-def _df_to_excel_bytes(df: pd.DataFrame) -> bytes:
-    """Cache expensive openpyxl serialization so it only runs when data changes."""
-    buf = io.BytesIO()
-    df.to_excel(buf, index=False, engine="openpyxl")
-    return buf.getvalue()
-
-
 def _to_arrow_safe_display_df(df: pd.DataFrame) -> pd.DataFrame:
     """Convert mixed-type object columns to strings to avoid Arrow serialization errors."""
     if df.empty:
@@ -37,6 +29,12 @@ def _to_arrow_safe_display_df(df: pd.DataFrame) -> pd.DataFrame:
         if pd.api.types.is_object_dtype(safe_df[col]):
             safe_df[col] = safe_df[col].map(lambda v: "" if pd.isna(v) else str(v))
     return safe_df
+
+
+@st.cache_data
+def _df_to_csv_bytes(df: pd.DataFrame) -> bytes:
+    """Cache CSV serialization so it only runs when data changes."""
+    return _to_arrow_safe_display_df(df).to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
 
 # 調整元件的樣式
 st.markdown("""
@@ -87,8 +85,7 @@ with tab_storage:
         _stg_total = len(storage)
         _stg_total_pages = max(1, (_stg_total - 1) // _stg_page_size + 1)
         _stg_dl_col, _stg_pg_col = st.columns([1, 3])
-        _stg_csv = storage.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-        _stg_dl_col.download_button("⬇️ 下載全部入庫資料", data=_stg_csv, file_name="入庫資料.csv", mime="text/csv", key="dl_stg_list")
+        _stg_dl_col.download_button("⬇️ 下載全部入庫資料", data=_df_to_csv_bytes(storage), file_name="入庫資料.csv", mime="text/csv", key="dl_stg_list")
         if _stg_total_pages > 1:
             _stg_page = _stg_pg_col.selectbox(
                 "頁碼", list(range(1, _stg_total_pages + 1)),
@@ -411,8 +408,7 @@ with tab_order:
             _p_total = len(pdf)
             _p_total_pages = max(1, (_p_total - 1) // _p_page_size + 1)
             _p_dl_col, _p_pg_col = st.columns([1, 3])
-            _p_csv = _to_arrow_safe_display_df(pdf).to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-            _p_dl_col.download_button(f"⬇️ 下載{plat_file}全部訂單", data=_p_csv, file_name=f"{plat_file}訂單.csv", mime="text/csv", key=f"dl_ord_{plat_file}")
+            _p_dl_col.download_button(f"⬇️ 下載{plat_file}全部訂單", data=_df_to_csv_bytes(pdf), file_name=f"{plat_file}訂單.csv", mime="text/csv", key=f"dl_ord_{plat_file}")
             if _p_total_pages > 1:
                 _p_page = _p_pg_col.selectbox(
                     "頁碼", list(range(1, _p_total_pages + 1)),
@@ -467,7 +463,9 @@ with tab_custom:
         _cust_total = len(custom_orders)
         _cust_total_pages = max(1, (_cust_total - 1) // _cust_page_size + 1)
         _cust_dl_col, _cust_pg_col = st.columns([1, 3])
-        _cust_dl_col.download_button("⬇️ 下載自建訂單", data=_df_to_excel_bytes(custom_orders), file_name="自建訂單.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_custom_list")
+        _cust_xlsx_buf = __import__("io").BytesIO()
+        custom_orders.to_excel(_cust_xlsx_buf, index=False, engine="openpyxl")
+        _cust_dl_col.download_button("⬇️ 下載自建訂單", data=_cust_xlsx_buf.getvalue(), file_name="自建訂單.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_custom_list")
         if _cust_total_pages > 1:
             _cust_page = _cust_pg_col.selectbox(
                 "頁碼", list(range(1, _cust_total_pages + 1)),
