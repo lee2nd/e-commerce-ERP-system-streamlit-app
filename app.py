@@ -6,6 +6,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, timezone, timedelta
 from utils.styles import apply_global_styles
+from utils.data_manager import delete_all_data, restore_from_zip
 
 TZ_TAIPEI = timezone(timedelta(hours=8))
 
@@ -63,7 +64,6 @@ if read_raw_bytes is None or save_raw_bytes is None:
 assert read_raw_bytes is not None
 assert save_raw_bytes is not None
 
-from utils.data_manager import delete_all_data, restore_from_zip
 
 # 各檔案的顯示名稱與備註
 _FILE_META: list[tuple[str, str, str]] = [
@@ -77,6 +77,7 @@ _FILE_META: list[tuple[str, str, str]] = [
     ("蝦皮.xlsx",    "蝦皮訂單",    "蝦皮累積原始訂單（原有合併上傳請至【📥 匯入資料】頁面）"),
     ("露天.xlsx",    "露天訂單",    "露天累積原始訂單（原有合併上傳請至【📥 匯入資料】頁面）"),
     ("官網.xlsx",    "官網訂單",    "官網累積原始訂單（原有合併上傳請至【📥 匯入資料】頁面）"),
+    ("自建訂單.xlsx","自建訂單",    "自建訂單（其他平台）累積記錄（原有新增請至【📥 匯入資料】頁面）"),
 ]
 
 # ── 一鍵下載 ZIP ──────────────────────────────────────────────
