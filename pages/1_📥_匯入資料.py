@@ -513,7 +513,7 @@ with tab_custom:
                     + new_cust["未取貨/退貨運費"] + new_cust["其他費用"]
                 )
                 new_cust["訂單總金額"] = new_cust["小計"] - new_cust["費用小記"]
-                new_cust["日期"] = pd.to_datetime(new_cust["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+                new_cust["日期"] = new_cust["日期"].replace("NaT", pd.Timestamp.now(tz="Asia/Taipei").strftime("%Y-%m-%d"))
                 for _sc in ["平台名稱", "訂單編號", "訂單狀態", "貨號"]:
                     if _sc in new_cust.columns:
                         new_cust[_sc] = new_cust[_sc].astype(str).str.strip()
@@ -616,7 +616,7 @@ with tab_custom:
                 + valid["未取貨/退貨運費"] + valid["其他費用"]
             )
             valid["訂單總金額"] = valid["小計"] - valid["費用小記"]
-            valid["日期"] = pd.to_datetime(valid["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+            valid["日期"] = valid["日期"].replace("NaT", pd.Timestamp.now(tz="Asia/Taipei").strftime("%Y-%m-%d"))
             for _sc in ["平台名稱", "訂單編號", "訂單狀態", "貨號", "買家姓名", "買家帳號"]:
                 if _sc in valid.columns:
                     valid[_sc] = valid[_sc].fillna("").astype(str).str.strip()

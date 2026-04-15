@@ -80,8 +80,14 @@ if st.button("🔄 重新掃描訂單", type="primary"):
         _cust_orders["平台"] = "其他"
         _cust_orders["平台商品名稱"] = _cust_raw["貨號"].fillna("").astype(str).str.strip()
         _cust_orders["貨號"] = _cust_raw["貨號"].fillna("").astype(str).str.strip()
-        _cust_orders["數量"] = pd.to_numeric(_cust_raw.get("數量", 0), errors="coerce").fillna(0).astype(int) # type: ignore
-        _cust_orders["單價"] = pd.to_numeric(_cust_raw.get("單價", 0), errors="coerce").fillna(0) # type: ignore
+        _cust_orders["數量"] = (
+            pd.to_numeric(_cust_raw["數量"], errors="coerce").fillna(0).astype(int)
+            if "數量" in _cust_raw.columns else 0
+        )
+        _cust_orders["單價"] = (
+            pd.to_numeric(_cust_raw["單價"], errors="coerce").fillna(0)
+            if "單價" in _cust_raw.columns else 0.0
+        )        
         _cust_orders["金額"] = _cust_orders["數量"] * _cust_orders["單價"]
         _cust_orders["賣家折扣"] = 0
         _cust_orders["訂單狀態"] = _cust_raw.get("訂單狀態", "已完成")

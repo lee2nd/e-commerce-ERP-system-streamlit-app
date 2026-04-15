@@ -72,7 +72,7 @@ if st.button("🔄 更新庫存明細", type="primary"):
                     matched_skus |= component_skus
             # 自建訂單的貨號也須納入庫存明細（退貨/未取貨除外）
             custom_ord = load_custom_orders()
-            if not custom_ord.empty and "貨號" in custom_ord.columns:
+            if not custom_ord.empty and "貨號" in custom_ord.columns and "訂單狀態" in custom_ord.columns:
                 _skip_st = {"退貨", "未取貨"}
                 _valid_cust_skus = set(
                     custom_ord[

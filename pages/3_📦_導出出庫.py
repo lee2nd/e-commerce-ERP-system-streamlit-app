@@ -386,7 +386,7 @@ def generate_delivery() -> pd.DataFrame:
                 _qty = int(row.get("數量", 0)) if pd.notna(row.get("數量")) else 0
             except (ValueError, TypeError):
                 _qty = 0
-            if _qty == 0:
+            if _qty <= 0:
                 continue
             try:
                 _price = float(row.get("單價", 0)) if pd.notna(row.get("單價")) else 0.0
