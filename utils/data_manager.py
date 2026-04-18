@@ -1,7 +1,6 @@
 """
 資料持久化層 — 內部以 Parquet 格式儲存，對外介面維持 .xlsx 邏輯名稱不變。
 支援本地開發（直接讀寫檔案）與 Hugging Face Spaces（透過 R2 S3-compatible API）。
-首次讀取時自動將舊 .xlsx 遷移為 .parquet，無需手動轉換。
 
 Hugging Face Spaces 環境變數需設定：
 R2_ACCESS_KEY_ID     = "..."   # Cloudflare R2 API Token Access Key ID
@@ -116,7 +115,7 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════
 
 def _load_excel(filename: str) -> pd.DataFrame:
-    """讀取資料：優先 parquet，找不到則 fallback xlsx 並自動遷移。"""
+    """讀取資料（內部 Parquet 格式）。"""
     pq_name = _parquet_name(filename)
 
     if _is_cloud():
@@ -124,43 +123,18 @@ def _load_excel(filename: str) -> pd.DataFrame:
         if cache_key in st.session_state:
             return st.session_state.pop(cache_key)
         try:
-            # 1) 嘗試 parquet
             raw = _r2_read_bytes(pq_name)
-            if raw is not None:
-                return _optimize_dtypes(pd.read_parquet(io.BytesIO(raw)))
-            # 2) fallback: 讀舊 xlsx → 自動遷移
-            raw = _r2_read_bytes(filename)
             if raw is None:
                 return pd.DataFrame()
-            df = _optimize_dtypes(pd.read_excel(io.BytesIO(raw), engine="openpyxl"))
-            # 遷移：寫 parquet + 刪 xlsx
-            buf = io.BytesIO()
-            _sanitize_for_parquet(df).to_parquet(buf, index=False, engine="pyarrow")
-            _r2_write_bytes(pq_name, buf.getvalue())
-            try:
-                _r2_delete_file(filename)
-            except Exception:
-                pass
-            return df
+            return _optimize_dtypes(pd.read_parquet(io.BytesIO(raw)))
         except Exception as e:
             st.warning(f"Failed to load {filename}: {e}")
             return pd.DataFrame()
     else:
         pq_path = DATA_DIR / pq_name
-        xlsx_path = DATA_DIR / filename
-        # 1) 嘗試 parquet
         if pq_path.exists() and pq_path.stat().st_size > 0:
             try:
                 return _optimize_dtypes(pd.read_parquet(pq_path))
-            except Exception:
-                pass  # 檔案損壞，fallback xlsx
-        # 2) fallback: 讀舊 xlsx → 自動遷移
-        if xlsx_path.exists() and xlsx_path.stat().st_size > 0:
-            try:
-                df = _optimize_dtypes(pd.read_excel(xlsx_path, engine="openpyxl"))
-                _sanitize_for_parquet(df).to_parquet(pq_path, index=False, engine="pyarrow")
-                xlsx_path.unlink(missing_ok=True)
-                return df
             except Exception as e:
                 st.warning(f"Failed to load {filename}: {e}")
                 return pd.DataFrame()
@@ -179,10 +153,6 @@ def _save_excel(df: pd.DataFrame, filename: str):
     else:
         pq_path = DATA_DIR / pq_name
         clean.to_parquet(pq_path, index=False, engine="pyarrow")
-        # 清理殘留的舊 xlsx
-        xlsx_path = DATA_DIR / filename
-        if xlsx_path.exists():
-            xlsx_path.unlink(missing_ok=True)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -459,30 +429,22 @@ def clear_custom_orders():
 # ══════════════════════════════════════════════════════════════
 
 def read_raw_bytes(filename: str) -> bytes | None:
-    """讀取指定檔案的原始 bytes（對外回傳 xlsx bytes 以供備份 / 下載）。
-    內部儲存為 parquet，讀取後即時轉為 xlsx bytes。
-    """
+    """讀取指定檔案，對外回傳 xlsx bytes 以供備份 / 下載。"""
     pq_name = _parquet_name(filename)
     try:
         if _is_cloud():
             raw = _r2_read_bytes(pq_name)
-            if raw is not None:
-                df = pd.read_parquet(io.BytesIO(raw))
-                buf = io.BytesIO()
-                df.to_excel(buf, index=False, engine="openpyxl")
-                return buf.getvalue()
-            # fallback: 嘗試直接讀舊 xlsx
-            return _r2_read_bytes(filename)
+            if raw is None:
+                return None
+            df = pd.read_parquet(io.BytesIO(raw))
         else:
             pq_path = DATA_DIR / pq_name
-            xlsx_path = DATA_DIR / filename
-            if pq_path.exists() and pq_path.stat().st_size > 0:
-                df = pd.read_parquet(pq_path)
-                buf = io.BytesIO()
-                df.to_excel(buf, index=False, engine="openpyxl")
-                return buf.getvalue()
-            # fallback: 直接讀舊 xlsx
-            return xlsx_path.read_bytes() if xlsx_path.exists() else None
+            if not pq_path.exists() or pq_path.stat().st_size == 0:
+                return None
+            df = pd.read_parquet(pq_path)
+        buf = io.BytesIO()
+        df.to_excel(buf, index=False, engine="openpyxl")
+        return buf.getvalue()
     except Exception:
         return None
 
@@ -510,10 +472,7 @@ def _clear_file_cache(filename: str):
 
 
 def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = None):
-    """以原始 bytes 全覆蓋指定檔案（接收 xlsx bytes → 轉存 parquet），並清除相關快取。
-    cache_key：指定要清除快取的槽位檔名（預設與 filename 相同），
-               當以原始上傳檔名存檔時傳入對應的 .xlsx 槽位名稱。
-    """
+    """以原始 bytes 全覆蓋指定檔案（接收 xlsx bytes → 轉存 parquet），並清除相關快取。"""
     pq_name = _parquet_name(filename)
     if filename.lower().endswith(".xlsx"):
         try:
@@ -525,16 +484,8 @@ def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = Non
             if _is_cloud():
                 _r2_write_bytes(pq_name, pq_bytes)
                 st.session_state[f"_df_cache_{filename}"] = df.copy()
-                try:
-                    _r2_delete_file(filename)
-                except Exception:
-                    pass                
             else:
                 (DATA_DIR / pq_name).write_bytes(pq_bytes)
-                # 清理殘留 xlsx
-                xlsx_path = DATA_DIR / filename
-                if xlsx_path.exists():
-                    xlsx_path.unlink(missing_ok=True)
         except Exception:
             # 無法解析為 DataFrame，直接存原始 bytes
             if _is_cloud():
@@ -564,7 +515,7 @@ def _clear_all_caches():
 
 
 def delete_all_data():
-    """刪除 DATA_DIR 下所有資料檔（parquet + 殘留 xlsx）。"""
+    """刪除 DATA_DIR 下所有資料檔（parquet）。"""
     files = [f for f, *_ in [
         ("入庫.xlsx",), ("出庫.xlsx",), ("對照表.xlsx",), ("庫存明細.xlsx",),
         ("日報表.xlsx",), ("月報表.xlsx",), ("組合貨號.xlsx",),
@@ -573,18 +524,16 @@ def delete_all_data():
     deleted = []
     if _is_cloud():
         for fname in files:
-            for target in (_parquet_name(fname), fname):
-                try:
-                    _r2_delete_file(target)
-                except Exception:
-                    pass
+            try:
+                _r2_delete_file(_parquet_name(fname))
+            except Exception:
+                pass
             deleted.append(fname)
     else:
         for fname in files:
-            for target in (_parquet_name(fname), fname):
-                path = DATA_DIR / target
-                if path.exists():
-                    path.unlink()
+            path = DATA_DIR / _parquet_name(fname)
+            if path.exists():
+                path.unlink()
             deleted.append(fname)
     _clear_all_caches()
     for fname in files:
