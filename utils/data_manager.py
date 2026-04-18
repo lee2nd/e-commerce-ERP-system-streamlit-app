@@ -35,7 +35,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 _R2_BUCKET = "lee2nd-erp"
 _R2_ENDPOINT = "https://3adce09e7050ac922cce36b5480d0bc7.r2.cloudflarestorage.com"
-_R2_PUBLIC_BASE = f"{_R2_ENDPOINT}/{_R2_BUCKET}"
+_R2_PUBLIC_BASE = "https://pub-848c9489895e448793d8f949ea5ce84c.r2.dev"
 
 
 def _r2_client():
