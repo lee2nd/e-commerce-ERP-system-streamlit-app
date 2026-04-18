@@ -157,7 +157,7 @@ def save_storage(df: pd.DataFrame):
         df = df.drop_duplicates(subset=existing_cols, keep="last").reset_index(drop=True)
     out = df.rename(columns=_STORAGE_COL_MAP_REV)
     _save_excel(out, "入庫.xlsx", "chore: update 入庫.xlsx")
-    load_storage.clear()
+    load_storage.clear() # type: ignore
 
 
 # ══════════════════════════════════════════════════════════════
