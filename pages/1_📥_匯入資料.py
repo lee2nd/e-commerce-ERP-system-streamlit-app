@@ -56,17 +56,15 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════
-# Tab 切換
-# ══════════════════════════════════════════════════════════════
-tab_storage, tab_order, tab_custom, tab_combo = st.tabs(["📥 匯入入庫資料", "📦 匯入平台訂單", "📝 匯入自建訂單", "🔗 組合貨號"])
+
+TEMPLATE_PATH = DATA_DIR / "入庫.xlsx"
+
 
 # ══════════════════════════════════════════════════════════════
 # Tab 1 – 匯入入庫資料
 # ══════════════════════════════════════════════════════════════
-TEMPLATE_PATH = DATA_DIR / "入庫.xlsx"
-
-with tab_storage:
+@st.fragment
+def _render_storage_tab():
 
     _stg_result = st.session_state.pop("stg_upload_success", None)
     if _stg_result is not None:
@@ -207,7 +205,7 @@ with tab_storage:
                     save_storage(merged_stg)
                     st.session_state["stg_upload_success"] = added
                     st.session_state["stg_upload_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
-                    st.rerun()
+                    st.rerun(scope="fragment")
         except Exception as e:
             st.error(f"匯入失敗：{e}")
 
@@ -241,7 +239,7 @@ with tab_storage:
                     .to_dict("records")
                 )
                 st.session_state["stg_dup_conflict"] = _conflict_records
-                st.rerun()
+                st.rerun(scope="fragment")
             else:
                 total = qty * unit_cost
                 row = pd.DataFrame([{
@@ -261,7 +259,7 @@ with tab_storage:
                 save_storage(combined)
                 st.session_state["stg_success"] = True
                 st.session_state["stg_add_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
-                st.rerun()
+                st.rerun(scope="fragment")
 
     if "stg_dup_conflict" in st.session_state:
         _conflict_data = st.session_state.pop("stg_dup_conflict")
@@ -298,7 +296,7 @@ with tab_storage:
                     save_storage(updated)
                     st.session_state["stg_del_success"] = True
                     st.session_state["stg_del_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
-                st.rerun()
+                st.rerun(scope="fragment")
 
     if st.session_state.pop("stg_del_success", False):
         st.success("刪除成功")
@@ -320,15 +318,17 @@ with tab_storage:
                 clear_storage()
             st.session_state.pop("confirm_clear_stg", None)
             st.success("✅ 入庫資料已清除")
-            st.rerun()
+            st.rerun(scope="fragment")
         if _c2.button("❌ 取消", key="confirm_clear_stg_no"):
             st.session_state.pop("confirm_clear_stg", None)
-            st.rerun()
-            
+            st.rerun(scope="fragment")
+
+
 # ══════════════════════════════════════════════════════════════
 # Tab 2 – 匯入平台訂單
 # ══════════════════════════════════════════════════════════════
-with tab_order:
+@st.fragment
+def _render_order_tab():
     if st.session_state.pop("order_upload_success", None) is not None:
         st.success("✅ 訂單匯入成功")
     _order_ts = st.session_state.get("order_saved_at")
@@ -393,7 +393,7 @@ with tab_order:
 
                 st.session_state["order_upload_success"] = len(new)
                 st.session_state["order_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
-                st.rerun()
+                st.rerun(scope="fragment")
 
         except Exception as e:
             st.error(f"匯入失敗：{e}")
@@ -437,15 +437,17 @@ with tab_order:
                     clear_platform_orders(_plat)
             st.session_state.pop("confirm_clear_orders", None)
             st.success("✅ 所有平台訂單已清除")
-            st.rerun()
+            st.rerun(scope="fragment")
         if _c2.button("❌ 取消", key="confirm_clear_orders_no"):
             st.session_state.pop("confirm_clear_orders", None)
-            st.rerun()
+            st.rerun(scope="fragment")
+
 
 # ══════════════════════════════════════════════════════════════
 # Tab 3 – 匯入自建訂單
 # ══════════════════════════════════════════════════════════════
-with tab_custom:
+@st.fragment
+def _render_custom_tab():
     _cust_result = st.session_state.pop("custom_upload_success", None)
     if _cust_result is not None:
         if _cust_result > 0:
@@ -479,7 +481,10 @@ with tab_custom:
             _to_arrow_safe_display_df(custom_orders).iloc[_cust_start:_cust_start + _cust_page_size],
             width='stretch', hide_index=True,
         )
-        st.caption("欄位說明：小計＝數量×單價、費用小記＝折扣優惠＋實際運費－買家支付運費＋未取貨/退貨運費＋其他費用、訂單總金額＝小計－費用小記")
+        st.caption("欄位說明：")
+        st.caption("小計＝數量×單價")
+        st.caption("費用小記＝折扣優惠＋實際運費－買家支付運費＋未取貨/退貨運費＋其他費用")
+        st.caption("訂單總金額＝小計－費用小記")
         st.caption(f"第 {_cust_page} 頁 / 共 {_cust_total_pages} 頁（{_cust_total:,} 筆）")
     else:
         st.info("尚未有自建訂單")
@@ -551,7 +556,7 @@ with tab_custom:
                 save_custom_orders(merged)
                 st.session_state["custom_upload_success"] = added
                 st.session_state["custom_upload_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
-                st.rerun()
+                st.rerun(scope="fragment")
         except Exception as e:
             st.error(f"匯入失敗：{e}")
 
@@ -632,7 +637,7 @@ with tab_custom:
             save_custom_orders(merged)
             st.session_state["custom_add_success"] = True
             st.session_state["custom_add_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
-            st.rerun()
+            st.rerun(scope="fragment")
 
     if st.session_state.pop("custom_add_success", False):
         st.success("✅ 自建訂單新增成功")
@@ -664,7 +669,7 @@ with tab_custom:
                     save_custom_orders(updated)
                     st.session_state["custom_del_success"] = True
                     st.session_state["custom_del_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
-                st.rerun()
+                st.rerun(scope="fragment")
 
     if st.session_state.pop("custom_del_success", False):
         st.success("刪除成功")
@@ -686,15 +691,17 @@ with tab_custom:
                 clear_custom_orders()
             st.session_state.pop("confirm_clear_custom", None)
             st.success("✅ 自建訂單已清除")
-            st.rerun()
+            st.rerun(scope="fragment")
         if _c2.button("❌ 取消", key="confirm_clear_custom_no"):
             st.session_state.pop("confirm_clear_custom", None)
-            st.rerun()
+            st.rerun(scope="fragment")
+
 
 # ══════════════════════════════════════════════════════════════
 # Tab 4 – 組合貨號
 # ══════════════════════════════════════════════════════════════
-with tab_combo:
+@st.fragment
+def _render_combo_tab():
     st.subheader("🔗 組合貨號管理")
     st.markdown(
         "組合商品由多組原料貨號組成，例如：`YGK03002-RDL30-RR-DIY` = `YGJ03002-RDL × 30` + `YGK03002-RR × 1`\n\n"
@@ -764,7 +771,7 @@ with tab_combo:
 
                 save_combo_sku(combined)
                 st.session_state["combo_upload_success"] = added_count
-                st.rerun()
+                st.rerun(scope="fragment")
         except Exception as e:
             st.error(f"匯入失敗：{e}")
 
@@ -821,7 +828,7 @@ with tab_combo:
                 save_combo_sku(combined)
                 
                 st.session_state["combo_add_success"] = True
-                st.rerun()
+                st.rerun(scope="fragment")
 
     # ── 刪除組合貨號 ──
     st.markdown("---")
@@ -839,7 +846,7 @@ with tab_combo:
                     updated = existing[existing["組合貨號"] != del_combo_code].reset_index(drop=True)
                     save_combo_sku(updated)
                     st.session_state["combo_del_success"] = True
-                st.rerun()
+                st.rerun(scope="fragment")
 
     # ── 清除所有組合貨號 ──
     st.markdown("---")
@@ -853,7 +860,22 @@ with tab_combo:
                 clear_combo_sku()
             st.session_state.pop("confirm_clear_combo", None)
             st.success("✅ 組合貨號已清除")
-            st.rerun()
+            st.rerun(scope="fragment")
         if _c2.button("❌ 取消", key="confirm_clear_combo_no"):
             st.session_state.pop("confirm_clear_combo", None)
-            st.rerun()
+            st.rerun(scope="fragment")
+
+
+# ══════════════════════════════════════════════════════════════
+# Tab 切換
+# ══════════════════════════════════════════════════════════════
+tab_storage, tab_order, tab_custom, tab_combo = st.tabs(["📥 匯入入庫資料", "📦 匯入平台訂單", "📝 匯入自建訂單", "🔗 組合貨號"])
+
+with tab_storage:
+    _render_storage_tab()
+with tab_order:
+    _render_order_tab()
+with tab_custom:
+    _render_custom_tab()
+with tab_combo:
+    _render_combo_tab()

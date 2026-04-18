@@ -403,7 +403,7 @@ streamlit run app.py
    - 根本原因：Streamlit tab 並非懶載入，每次互動都會重跑整個腳本；`tab_custom` 中的 `to_excel(..., engine="openpyxl")` 序列化非常耗時，不論在哪個分頁操作都會執行
    - 修正：新增 `@st.cache_data` 包裝的 `_df_to_excel_bytes()` 函式，對 DataFrame 做雜湊，僅在資料實際變更時重新序列化，其他情況直接回傳快取 bytes
 
-    
+
 ## 4/18 完成項目
 
 ### 雲端儲存層遷移：GitHub API → Cloudflare R2
@@ -422,6 +422,16 @@ streamlit run app.py
 4. **`data/` 資料夾從 repo 移除，資料改存於 R2 bucket `lee2nd-erp`**
 
 5. **修正一鍵刪除全部資料遺漏 `自建訂單.xlsx`**
+
+
+### 匯入資料各分頁獨立執行（@st.fragment）
+
+5. **問題**：「匯入平台訂單」分頁若載入緩慢，「匯入自建訂單」與「組合貨號」分頁也會一起等待，因為 Streamlit 每次 rerun 會依序執行所有 tab 的程式碼
+6. **修正**：將四個 tab 的內容各自包裝為 `@st.fragment` 函式（`_render_storage_tab`、`_render_order_tab`、`_render_custom_tab`、`_render_combo_tab`）
+7. **效果**：每個分頁的 rerun 作用域獨立，操作哪個 tab 就只重跑那個 tab，其他分頁不受影響
+8. **相關調整**：所有 `st.rerun()` 改為 `st.rerun(scope="fragment")`，確保狀態刷新限縮在當前 fragment 內；`requirements.txt` 最低版本需求由 `1.30.0` 提升至 `1.37.0`（`@st.fragment` 引入版本）
+
+---
 
 ---
 
