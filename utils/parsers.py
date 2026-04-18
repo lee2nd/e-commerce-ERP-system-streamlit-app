@@ -211,7 +211,7 @@ def parse_mo(file) -> pd.DataFrame:
 
     # 訂單狀態
     order_stat = df["訂單狀態"].fillna("").astype(str)
-    ret_reason = df["銷退原因"].fillna("").astype(str)
+    ret_reason = df["銷退原因"].fillna("").astype(str) if "銷退原因" in df.columns else pd.Series("", index=df.index)
 
     out["訂單狀態"] = "正常"
     out.loc[order_stat == "配送結束", "訂單狀態"] = "已完成"

@@ -20,6 +20,14 @@ st.title("📦 導出出庫")
 
 TZ_TAIPEI = timezone(timedelta(hours=8))
 
+PLATFORM_COLORS = {
+    "蝦皮": "#FF6B35",
+    "露天": "#4A90D9",
+    "官網": "#2ECC71",
+    "MO店": "#AB63FA",
+    "其他": "#F39C12",
+}
+
 # 載入對照表與入庫資料，建立映射
 compare = load_compare_table()
 storage = load_storage()
@@ -180,7 +188,7 @@ def _build_platform_key(row: pd.Series, platform: str) -> str:
         return f"{name}::{variant}"
     elif platform == "MO店":
         name = _cs(row.get("商品名稱", ""))
-        return name
+        return f"{name}::"
     return ""
 
 
@@ -250,14 +258,10 @@ def _filter_mo(df: pd.DataFrame) -> pd.DataFrame:
         return df
     mask = pd.Series(True, index=df.index)
     if "訂單狀態" in df.columns:
-        order_stat = df["訂單狀態"].fillna("").astype(str)
-        mask &= order_stat != "取消訂單"
-        # 已回收 = 退貨 → 不出庫
-        mask &= order_stat != "已回收"
-        # 配送異常 = 未取貨 → 不出庫
-        mask &= order_stat != "配送異常"
+        order_stat = df["訂單狀態"].fillna("").astype(str).str.strip()
+        mask &= ~order_stat.isin(["取消訂單", "已回收", "配送異常"])
     if "銷退原因" in df.columns:
-        ret_reason = df["銷退原因"].fillna("").astype(str)
+        ret_reason = df["銷退原因"].fillna("").astype(str).str.strip()
         mask &= ret_reason != "配送異常結案"
     return df[mask].copy()
 
@@ -467,7 +471,7 @@ def generate_delivery() -> pd.DataFrame:
 existing_delivery = load_delivery()
 if not existing_delivery.empty:
 
-    colors = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "MO店": "#AB63FA", "其他": "#F39C12"}
+    colors = PLATFORM_COLORS
 
     c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     c1.metric("總筆數", len(existing_delivery))
@@ -568,7 +572,7 @@ else:
     view_dlv = view_dlv[_cols]
 
     # 平台顏色標註
-    _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "MO店": "#AB63FA", "其他": "#F39C12"}
+    _PLAT_COLORS = PLATFORM_COLORS
 
     def _highlight_row(row):
         color = _PLAT_COLORS.get(row.get("平台", ""), "")

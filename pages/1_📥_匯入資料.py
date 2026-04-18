@@ -364,7 +364,8 @@ def _render_order_tab():
             raw_preview = read_file_flexible(uploaded)
             uploaded.seek(0)  # 重置指標供後續 parser 使用
 
-            plat_short = "蝦皮" if "蝦皮" in platform else ("露天" if "露天" in platform else ("MO店" if "MO店" in platform else "官網"))
+            _PLAT_SHORT_MAP = {"蝦皮": "蝦皮", "露天": "露天", "MO店": "MO店", "官網 (EasyStore)": "官網"}
+            plat_short = _PLAT_SHORT_MAP.get(platform, "官網")
             col_ok, col_msg = _check_platform_columns(len(raw_preview.columns), plat_short)
             if not col_ok:
                 st.error(col_msg)
