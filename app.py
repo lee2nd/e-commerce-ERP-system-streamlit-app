@@ -6,7 +6,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, timezone, timedelta
 from utils.styles import apply_global_styles
-from utils.data_manager import delete_all_data, restore_from_zip, read_raw_bytes, save_raw_bytes
+from utils.data_manager import delete_all_data, restore_from_zip, read_raw_bytes, read_raw_parquet_bytes, save_raw_bytes
 
 apply_global_styles()
 # 每 3 分鐘發送 keep-alive 訊號，防止 Hugging Face Spaces 閒置斷線
@@ -62,28 +62,30 @@ _FILE_META: list[tuple[str, str, str]] = [
 # ── 一鍵下載 ZIP ──────────────────────────────────────────────
 st.markdown("#### ⬇️ 下載全部資料")
 
-if "_zip_bytes" not in st.session_state:
+if st.button("📦 生成備份 ZIP", key="btn_gen_zip"):
     with st.spinner("準備備份 ZIP…"):
         _buf = io.BytesIO()
         with zipfile.ZipFile(_buf, "w", zipfile.ZIP_DEFLATED) as _zf:
             for _fname, *_ in _FILE_META:
-                _raw = read_raw_bytes(_fname)
+                _raw = read_raw_parquet_bytes(_fname)
                 if _raw:
-                    _zf.writestr(_fname, _raw)
+                    _pq_name = _fname.rsplit(".", 1)[0] + ".parquet"
+                    _zf.writestr(_pq_name, _raw)
         _buf.seek(0)
         st.session_state["_zip_bytes"] = _buf.read()
         st.session_state["_zip_ts"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y%m%d_%H%M%S")
 
-_zip_bytes = st.session_state["_zip_bytes"]
-_zip_ts    = st.session_state["_zip_ts"]
-st.download_button(
-    label="⬇️ 下載備份 ZIP",
-    data=_zip_bytes,
-    file_name=f"erp_backup_{_zip_ts}.zip",
-    mime="application/zip",
-    key="dl_zip",
-)
-st.caption(f"ZIP 產生時間：{_zip_ts}")
+if "_zip_bytes" in st.session_state:
+    _zip_bytes = st.session_state["_zip_bytes"]
+    _zip_ts    = st.session_state["_zip_ts"]
+    st.download_button(
+        label="⬇️ 下載備份 ZIP",
+        data=_zip_bytes,
+        file_name=f"erp_backup_{_zip_ts}.zip",
+        mime="application/zip",
+        key="dl_zip",
+    )
+    st.caption(f"ZIP 產生時間：{_zip_ts}")
 
 st.markdown("---")
 
@@ -111,7 +113,7 @@ if _uploaded_zip:
                 st.session_state["_toast_restore"] = f"✅ 已還原 {len(restored)} 個檔案：{', '.join(restored)}（{ts}）"
                 st.rerun()
             else:
-                st.warning("ZIP 內沒有找到任何 .xlsx 檔案")
+                st.warning("ZIP 內沒有找到任何 .xlsx / .parquet 檔案")
         except Exception as e:
             st.error(f"還原失敗：{e}")
 
