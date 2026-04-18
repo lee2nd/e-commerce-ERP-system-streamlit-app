@@ -2,8 +2,6 @@ name: Sync to Hugging Face hub
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'data/**'       # app 透過 GitHub API 寫入資料時不觸發同步
 
   # 允許手動觸發此工作流程
   workflow_dispatch:
@@ -17,10 +15,9 @@ jobs:
           fetch-depth: 1    # 淺 clone，不帶歷史
           lfs: false        # 不需要 LFS
 
-      # 建立乾淨的 orphan branch，完全不帶 data/ 與舊歷史
-      - name: Create clean branch without data folder
+      # 建立乾淨的 orphan branch（資料已移至 Cloudflare R2，不在 repo 內）
+      - name: Create clean branch
         run: |
-          rm -rf data/
           rm -rf .git
           git init
           git config user.name "GitHub Actions"

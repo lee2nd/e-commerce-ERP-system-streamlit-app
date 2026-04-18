@@ -1,6 +1,5 @@
 # 地端開發資料（不上傳 git）
 data_dev/
-data/
 
 # Python
 __pycache__/
@@ -36,10 +35,3 @@ Thumbs.db
 
 
 *.xlsx
-
-# README 截圖（二進位檔案，不追蹤）
-image/README/*.png
-image/README/*.jpg
-image/README/*.jpeg
-image/README/*.gif
-image/README/*.webp
