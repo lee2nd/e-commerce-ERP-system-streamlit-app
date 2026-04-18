@@ -478,8 +478,8 @@ def _render_custom_tab():
         )
         st.caption("欄位說明：")
         st.caption("小計＝數量×單價")
-        st.caption("費用小記＝折扣優惠＋實際運費－買家支付運費＋未取貨/退貨運費＋其他費用")
-        st.caption("訂單總金額＝小計－費用小記")
+        st.caption("費用小計＝折扣優惠＋實際運費－買家支付運費＋未取貨/退貨運費＋其他費用")
+        st.caption("訂單總金額＝小計－費用小計")
         st.caption(f"第 {_cust_page} 頁 / 共 {_cust_total_pages} 頁（{_cust_total:,} 筆）")
     else:
         st.info("尚未有自建訂單")
@@ -492,6 +492,7 @@ def _render_custom_tab():
         type=["xlsx", "xls", "csv"],
         key="custom_upload",
     )
+    st.caption("⚠️ 使用 Excel 上傳時，請自行計算好各欄位數值：**小計**、**費用小計**、**訂單總金額**，系統不會自動重新計算。")
 
     if cust_file:
         try:
