@@ -167,7 +167,7 @@ def _load_excel(filename: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _save_excel(df: pd.DataFrame, filename: str, commit_msg: str):
+def _save_excel(df: pd.DataFrame, filename: str):
     """寫入資料：以 Parquet 格式儲存。"""
     pq_name = _parquet_name(filename)
     clean = _sanitize_for_parquet(df)
@@ -212,7 +212,7 @@ def save_storage(df: pd.DataFrame):
     if existing_cols:
         df = df.drop_duplicates(subset=existing_cols, keep="last").reset_index(drop=True)
     out = df.rename(columns=_STORAGE_COL_MAP_REV)
-    _save_excel(out, "入庫.xlsx", "chore: update 入庫.xlsx")
+    _save_excel(out, "入庫.xlsx")
     load_storage.clear() # type: ignore
 
 
@@ -242,7 +242,7 @@ def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataF
     else:
         combined = pd.concat([existing, new_df], ignore_index=True)
     combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
-    _save_excel(combined, f"{platform_name}.xlsx", f"chore: update {platform_name}.xlsx")
+    _save_excel(combined, f"{platform_name}.xlsx")
     load_platform_orders.clear()
     return combined
 
@@ -257,7 +257,7 @@ def load_compare_table() -> pd.DataFrame:
 
 
 def save_compare_table(df: pd.DataFrame):
-    _save_excel(df, "對照表.xlsx", "chore: update 對照表.xlsx")
+    _save_excel(df, "對照表.xlsx")
     load_compare_table.clear()
 
 
@@ -271,7 +271,7 @@ def load_daily_report() -> pd.DataFrame:
 
 
 def save_daily_report(df: pd.DataFrame):
-    _save_excel(df, "日報表.xlsx", "chore: update 日報表.xlsx")
+    _save_excel(df, "日報表.xlsx")
     load_daily_report.clear()
 
 
@@ -285,7 +285,7 @@ def clear_daily_report():
     existing = _load_excel("日報表.xlsx")
     if not existing.empty:
         cols = list(existing.columns)
-    _save_excel(pd.DataFrame(columns=cols), "日報表.xlsx", "chore: clear 日報表.xlsx")
+    _save_excel(pd.DataFrame(columns=cols), "日報表.xlsx")
     load_daily_report.clear()
 
 
@@ -299,7 +299,7 @@ def load_monthly_report() -> pd.DataFrame:
 
 
 def save_monthly_report(df: pd.DataFrame):
-    _save_excel(df, "月報表.xlsx", "chore: update 月報表.xlsx")
+    _save_excel(df, "月報表.xlsx")
     load_monthly_report.clear()
 
 
@@ -307,7 +307,7 @@ def clear_monthly_report():
     """清空月報表，保留欄位結構。"""
     existing = _load_excel("月報表.xlsx")
     cols = list(existing.columns) if not existing.empty else ["年份", "月份"]
-    _save_excel(pd.DataFrame(columns=cols), "月報表.xlsx", "chore: clear 月報表.xlsx")
+    _save_excel(pd.DataFrame(columns=cols), "月報表.xlsx")
     load_monthly_report.clear()
 
 
@@ -321,7 +321,7 @@ def load_delivery() -> pd.DataFrame:
 
 
 def save_delivery(df: pd.DataFrame):
-    _save_excel(df, "出庫.xlsx", "chore: update 出庫.xlsx")
+    _save_excel(df, "出庫.xlsx")
     load_delivery.clear()
 
 
@@ -335,7 +335,7 @@ def load_inventory_details() -> pd.DataFrame:
 
 
 def save_inventory_details(df: pd.DataFrame):
-    _save_excel(df, "庫存明細.xlsx", "chore: update 庫存明細.xlsx")
+    _save_excel(df, "庫存明細.xlsx")
     load_inventory_details.clear()
 
 
@@ -349,7 +349,7 @@ def clear_storage():
     existing = _load_excel("入庫.xlsx")
     if not existing.empty:
         cols = list(existing.columns)
-    _save_excel(pd.DataFrame(columns=cols), "入庫.xlsx", "chore: clear 入庫.xlsx")
+    _save_excel(pd.DataFrame(columns=cols), "入庫.xlsx")
     load_storage.clear()
 
 
@@ -358,7 +358,7 @@ def clear_platform_orders(platform_name: str):
     fname = f"{platform_name}.xlsx"
     existing = _load_excel(fname)
     cols = list(existing.columns) if not existing.empty else []
-    _save_excel(pd.DataFrame(columns=cols), fname, f"chore: clear {fname}")
+    _save_excel(pd.DataFrame(columns=cols), fname)
     load_platform_orders.clear()
 
 
@@ -368,7 +368,7 @@ def clear_compare_table():
     existing = _load_excel("對照表.xlsx")
     if not existing.empty:
         cols = list(existing.columns)
-    _save_excel(pd.DataFrame(columns=cols), "對照表.xlsx", "chore: clear 對照表.xlsx")
+    _save_excel(pd.DataFrame(columns=cols), "對照表.xlsx")
     load_compare_table.clear()
 
 
@@ -378,7 +378,7 @@ def clear_delivery():
     existing = _load_excel("出庫.xlsx")
     if not existing.empty:
         cols = list(existing.columns)
-    _save_excel(pd.DataFrame(columns=cols), "出庫.xlsx", "chore: clear 出庫.xlsx")
+    _save_excel(pd.DataFrame(columns=cols), "出庫.xlsx")
     load_delivery.clear()
 
 
@@ -389,7 +389,7 @@ def clear_inventory_details():
     existing = _load_excel("庫存明細.xlsx")
     if not existing.empty:
         cols = list(existing.columns)
-    _save_excel(pd.DataFrame(columns=cols), "庫存明細.xlsx", "chore: clear 庫存明細.xlsx")
+    _save_excel(pd.DataFrame(columns=cols), "庫存明細.xlsx")
     load_inventory_details.clear()
 
 
@@ -403,7 +403,7 @@ def load_combo_sku() -> pd.DataFrame:
 
 
 def save_combo_sku(df: pd.DataFrame):
-    _save_excel(df, "組合貨號.xlsx", "chore: update 組合貨號.xlsx")
+    _save_excel(df, "組合貨號.xlsx")
     load_combo_sku.clear()
 
 
@@ -413,7 +413,7 @@ def clear_combo_sku():
     existing = _load_excel("組合貨號.xlsx")
     if not existing.empty:
         cols = list(existing.columns)
-    _save_excel(pd.DataFrame(columns=cols), "組合貨號.xlsx", "chore: clear 組合貨號.xlsx")
+    _save_excel(pd.DataFrame(columns=cols), "組合貨號.xlsx")
     load_combo_sku.clear()
 
 
@@ -442,7 +442,7 @@ def save_custom_orders(df: pd.DataFrame):
     if "日期" in out.columns:
         out["日期"] = pd.to_datetime(out["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
         out["日期"] = out["日期"].fillna("")
-    _save_excel(out, "自建訂單.xlsx", "chore: update 自建訂單.xlsx")
+    _save_excel(out, "自建訂單.xlsx")
     load_custom_orders.clear()
 
 
@@ -450,7 +450,7 @@ def clear_custom_orders():
     """清空自建訂單，保留欄位結構。"""
     existing = _load_excel("自建訂單.xlsx")
     cols = list(existing.columns) if not existing.empty else _CUSTOM_ORDER_COLS
-    _save_excel(pd.DataFrame(columns=cols), "自建訂單.xlsx", "chore: clear 自建訂單.xlsx")
+    _save_excel(pd.DataFrame(columns=cols), "自建訂單.xlsx")
     load_custom_orders.clear()
 
 
@@ -476,7 +476,7 @@ def read_raw_bytes(filename: str) -> bytes | None:
         else:
             pq_path = DATA_DIR / pq_name
             xlsx_path = DATA_DIR / filename
-            if pq_path.exists():
+            if pq_path.exists() and pq_path.stat().st_size > 0:
                 df = pd.read_parquet(pq_path)
                 buf = io.BytesIO()
                 df.to_excel(buf, index=False, engine="openpyxl")
@@ -525,6 +525,10 @@ def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = Non
             if _is_cloud():
                 _r2_write_bytes(pq_name, pq_bytes)
                 st.session_state[f"_df_cache_{filename}"] = df.copy()
+                try:
+                    _r2_delete_file(filename)
+                except Exception:
+                    pass                
             else:
                 (DATA_DIR / pq_name).write_bytes(pq_bytes)
                 # 清理殘留 xlsx
