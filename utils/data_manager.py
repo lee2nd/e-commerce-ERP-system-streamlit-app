@@ -1,17 +1,15 @@
 """
-資料持久化層 — 透過 GitHub API 讀寫 Excel，統一管理 data/ 目錄。
-支援本地開發（直接讀寫檔案）與 Hugging Face Spaces（透過 GitHub API）。
+資料持久化層 — 透過 Cloudflare R2 讀寫 Excel，統一管理 data/ 目錄。
+支援本地開發（直接讀寫檔案）與 Hugging Face Spaces（透過 R2 S3-compatible API）。
 
 Hugging Face Spaces 環境變數需設定：
-GITHUB_TOKEN = "ghp_xxxxxxxxxxxx"   # GitHub Personal Access Token (repo 權限)
-GITHUB_OWNER = "lee2nd"             # GitHub 帳號
-GITHUB_REPO  = "e-commerce-ERP-system-streamlit-app"
-GITHUB_BRANCH = "main"              # 寫入的分支（選填，預設 main）
+R2_ACCESS_KEY_ID     = "..."   # Cloudflare R2 API Token Access Key ID
+R2_SECRET_ACCESS_KEY = "..."   # Cloudflare R2 API Token Secret Access Key
 """
 
 import os
 import io
-import base64
+import boto3
 import requests
 import pandas as pd
 import streamlit as st
@@ -32,120 +30,47 @@ DATA_DIR.mkdir(exist_ok=True)
 
 
 # ══════════════════════════════════════════════════════════════
-# GitHub API 工具函式（僅雲端使用）
+# Cloudflare R2 工具函式（僅雲端使用）
 # ══════════════════════════════════════════════════════════════
 
-def _gh_config() -> dict:
-    """從環境變數讀取 GitHub 設定（Hugging Face Spaces）。"""
-    try:
-        return {
-            "token":  os.environ["GITHUB_TOKEN"],
-            "owner":  os.environ["GITHUB_OWNER"],
-            "repo":   os.environ["GITHUB_REPO"],
-            "branch": os.environ.get("GITHUB_BRANCH", "main"),
-        }
-    except KeyError as e:
-        raise RuntimeError(
-            f"雲端模式需要設定環境變數 {e}。"
-            "若為本地開發，請確認 data_dev/ 資料夾存在。"
-        ) from None
+_R2_BUCKET = "lee2nd-erp"
+_R2_ENDPOINT = "https://3adce09e7050ac922cce36b5480d0bc7.r2.cloudflarestorage.com"
+_R2_PUBLIC_BASE = f"{_R2_ENDPOINT}/{_R2_BUCKET}"
 
 
-def _gh_headers(token: str) -> dict:
-    return {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-
-
-def _gh_read_excel(filename: str) -> pd.DataFrame:
-    """
-    從 GitHub Contents API 下載 Excel 檔並回傳 DataFrame。
-    使用 Contents API 而非 raw URL，以確保讀取最新版本（避免快取延遲）。
-    """
-    cfg = _gh_config()
-    headers = _gh_headers(cfg["token"])
-    api_url = (
-        f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}"
-        f"/contents/data/{filename}"
+def _r2_client():
+    """建立 boto3 S3 client，指向 Cloudflare R2。"""
+    return boto3.client(
+        "s3",
+        endpoint_url=_R2_ENDPOINT,
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
     )
-    resp = requests.get(
-        api_url, headers=headers,
-        params={"ref": cfg["branch"]},
-        timeout=15,
-    )
+
+
+def _r2_read_bytes(filename: str) -> bytes | None:
+    """以公開 HTTP GET 從 R2 讀取檔案，回傳 bytes；404 回傳 None。"""
+    url = f"{_R2_PUBLIC_BASE}/{filename}"
+    resp = requests.get(url, timeout=15)
     if resp.status_code == 404:
-        return pd.DataFrame()
+        return None
     resp.raise_for_status()
-    data = resp.json()
-    # 檔案 < 1 MB：Contents API 直接回傳 base64 content
-    if data.get("content"):
-        content_bytes = base64.b64decode(data["content"])
-    else:
-        # 檔案較大時，改用 download_url 下載
-        dl_resp = requests.get(data["download_url"], headers=headers, timeout=15)
-        dl_resp.raise_for_status()
-        content_bytes = dl_resp.content
-    return pd.read_excel(io.BytesIO(content_bytes), engine="openpyxl")
+    return resp.content
 
 
-def _gh_write_excel(df: pd.DataFrame, filename: str, commit_msg: str):
-    """
-    將 DataFrame 寫成 Excel 並透過 GitHub API commit 到 data/{filename}。
-    若檔案已存在會先取得 sha 再更新；不存在則新建。
-    """
-    cfg = _gh_config()
-    headers = _gh_headers(cfg["token"])
-    api_base = f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}/contents/data/{filename}"
-
-    # 1. 先查目前的 sha（更新檔案時必填）
-    sha = None
-    get_resp = requests.get(api_base, headers=headers, params={"ref": cfg["branch"]}, timeout=10)
-    if get_resp.status_code == 200:
-        sha = get_resp.json().get("sha")
-    elif get_resp.status_code != 404:
-        get_resp.raise_for_status()
-
-    # 2. DataFrame → Excel bytes → base64
-    buf = io.BytesIO()
-    df.to_excel(buf, index=False, engine="openpyxl")
-    b64_content = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-    # 3. PUT 請求
-    if commit_msg is None:
-        commit_msg = f"chore: update {filename} via Streamlit app"
-    payload = {
-        "message": commit_msg,
-        "content": b64_content,
-        "branch":  cfg["branch"],
-    }
-    if sha:
-        payload["sha"] = sha
-
-    put_resp = requests.put(api_base, headers=headers, json=payload, timeout=20)
-    put_resp.raise_for_status()
-
-
-def _gh_write_raw_bytes(filename: str, file_bytes: bytes, commit_msg: str):
-    """將原始 bytes 透過 GitHub API 直接 commit 到 data/{filename}。"""
-    cfg = _gh_config()
-    headers = _gh_headers(cfg["token"])
-    api_base = (
-        f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}"
-        f"/contents/data/{filename}"
+def _r2_write_bytes(filename: str, file_bytes: bytes):
+    """將 bytes 上傳至 R2 bucket。"""
+    _r2_client().put_object(
+        Bucket=_R2_BUCKET,
+        Key=filename,
+        Body=file_bytes,
     )
-    sha = None
-    get_resp = requests.get(api_base, headers=headers, params={"ref": cfg["branch"]}, timeout=10)
-    if get_resp.status_code == 200:
-        sha = get_resp.json().get("sha")
-    elif get_resp.status_code != 404:
-        get_resp.raise_for_status()
-    b64_content = base64.b64encode(file_bytes).decode("utf-8")
-    payload: dict = {"message": commit_msg, "content": b64_content, "branch": cfg["branch"]}
-    if sha:
-        payload["sha"] = sha
-    put_resp = requests.put(api_base, headers=headers, json=payload, timeout=20)
-    put_resp.raise_for_status()
+
+
+def _r2_delete_file(filename: str):
+    """從 R2 bucket 刪除指定檔案（不存在時靜默略過）。"""
+    _r2_client().delete_object(Bucket=_R2_BUCKET, Key=filename)
 
 
 # ── dtype 優化 ──────────────────────────────────────────────
@@ -173,7 +98,10 @@ def _load_excel(filename: str) -> pd.DataFrame:
         if cache_key in st.session_state:
             return st.session_state.pop(cache_key)
         try:
-            return _optimize_dtypes(_gh_read_excel(filename))
+            raw = _r2_read_bytes(filename)
+            if raw is None:
+                return pd.DataFrame()
+            return _optimize_dtypes(pd.read_excel(io.BytesIO(raw), engine="openpyxl"))
         except Exception as e:
             st.warning(f"Failed to load {filename}: {e}")
             return pd.DataFrame()
@@ -191,7 +119,9 @@ def _load_excel(filename: str) -> pd.DataFrame:
 def _save_excel(df: pd.DataFrame, filename: str, commit_msg: str):
     """寫入 Excel：本地直接寫檔，雲端透過 GitHub API commit。"""
     if _is_cloud():
-        _gh_write_excel(df, filename, commit_msg)
+        buf = io.BytesIO()
+        df.to_excel(buf, index=False, engine="openpyxl")
+        _r2_write_bytes(filename, buf.getvalue())
         # 寫入後暫存到 session_state，讓 rerun 後讀取不受 API 延遲影響
         st.session_state[f"_df_cache_{filename}"] = df.copy()
     else:
@@ -467,22 +397,7 @@ def clear_custom_orders():
 def read_raw_bytes(filename: str) -> bytes | None:
     """讀取 DATA_DIR 內指定檔案的原始 bytes；不存在時回傳 None。"""
     if _is_cloud():
-        cfg = _gh_config()
-        headers = _gh_headers(cfg["token"])
-        api_url = (
-            f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}"
-            f"/contents/data/{filename}"
-        )
-        resp = requests.get(api_url, headers=headers, params={"ref": cfg["branch"]}, timeout=15)
-        if resp.status_code == 404:
-            return None
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("content"):
-            return base64.b64decode(data["content"])
-        dl_resp = requests.get(data["download_url"], headers=headers, timeout=15)
-        dl_resp.raise_for_status()
-        return dl_resp.content
+        return _r2_read_bytes(filename)
     else:
         path = DATA_DIR / filename
         return path.read_bytes() if path.exists() else None
@@ -511,7 +426,7 @@ def _clear_file_cache(filename: str):
 def save_raw_bytes(filename: str, file_bytes: bytes):
     """以原始 bytes 全覆蓋指定檔案，並清除相關快取。"""
     if _is_cloud():
-        _gh_write_raw_bytes(filename, file_bytes, f"chore: overwrite {filename} via Streamlit restore")
+        _r2_write_bytes(filename, file_bytes)
         # 讓下一次 rerun 讀取到最新資料
         df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
         st.session_state[f"_df_cache_{filename}"] = df.copy()
@@ -532,28 +447,6 @@ def _clear_all_caches():
     load_platform_orders.clear()
 
 
-def _gh_delete_file(filename: str):
-    """透過 GitHub API 刪除 data/{filename}。"""
-    cfg = _gh_config()
-    headers = _gh_headers(cfg["token"])
-    api_url = (
-        f"https://api.github.com/repos/{cfg['owner']}/{cfg['repo']}"
-        f"/contents/data/{filename}"
-    )
-    get_resp = requests.get(api_url, headers=headers, params={"ref": cfg["branch"]}, timeout=10)
-    if get_resp.status_code == 404:
-        return  # 檔案不存在，略過
-    get_resp.raise_for_status()
-    sha = get_resp.json()["sha"]
-    payload = {
-        "message": f"chore: delete {filename} via Streamlit reset",
-        "sha": sha,
-        "branch": cfg["branch"],
-    }
-    del_resp = requests.delete(api_url, headers=headers, json=payload, timeout=20)
-    del_resp.raise_for_status()
-
-
 def delete_all_data():
     """刪除 DATA_DIR 下所有 .xlsx 檔案（本地直接刪檔，雲端透過 GitHub API）。"""
     files = [f for f, *_ in [
@@ -565,7 +458,7 @@ def delete_all_data():
     if _is_cloud():
         for fname in files:
             try:
-                _gh_delete_file(fname)
+                _r2_delete_file(fname)
                 deleted.append(fname)
             except Exception:
                 pass  # 刪除失敗的檔案略過
