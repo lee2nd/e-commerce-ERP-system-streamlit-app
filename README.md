@@ -467,6 +467,28 @@ streamlit run app.py
 
 8. **`pages/5_📊_日報表.py`** — 載入 MO店 原始訂單並傳入 `generate_daily_report()`
 
+### 內部儲存格式改為 Parquet（效能優化）
+
+1. **`utils/data_manager.py` — 儲存層從 xlsx 改為 parquet**
+   - 新增 `_parquet_name()` helper：將邏輯檔名 `xxx.xlsx` 對應到實際儲存的 `xxx.parquet`
+   - 新增 `_sanitize_for_parquet()` helper：寫入前清理欄位名稱（強制為字串）、mixed-type 欄位統一型態
+   - `_save_excel()` 改為 `df.to_parquet(engine="pyarrow")`；`_load_excel()` 改為優先讀 `.parquet`
+   - **自動遷移**：首次讀取時若只有舊 `.xlsx`，自動讀取 → 存 parquet → 刪舊 xlsx，無需手動介入
+   - `read_raw_bytes()`：對外回傳 xlsx bytes（parquet → xlsx on-the-fly），備份 ZIP 仍為使用者可開的 xlsx
+   - `save_raw_bytes()`：接收 xlsx bytes（ZIP 還原、個別上傳）→ 自動轉存 parquet
+   - `delete_all_data()`：同時清除 `.parquet` 與殘留 `.xlsx`
+
+2. **`requirements.txt`** — 新增 `pyarrow>=14.0.0`
+
+3. **實測效能（蝦皮訂單 98,218 rows × 57 cols）**
+
+   | 指標 | xlsx (openpyxl) | parquet (pyarrow) | 提升 |
+   |------|-----------------|-------------------|------|
+   | 讀取速度 | 33.1s | 0.195s | **170x 快** |
+   | 檔案大小 | 26,200 KB | 4,712 KB | **5.6x 小** |
+
+4. **對外介面完全不變**：備份 ZIP 仍含 xlsx、舊備份可直接還原、使用者上傳格式不變；所有 page、parser、calculator、app.py 均無需修改
+
 ---
 
 ## CICD Issues
