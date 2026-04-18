@@ -570,9 +570,13 @@ def restore_from_zip(zip_bytes: bytes) -> list[str]:
                 # 直接寫入 parquet，不需轉換
                 if _is_cloud():
                     _r2_write_bytes(basename, file_bytes)
+                    # Clear session state cache for the corresponding xlsx logical name
+                    xlsx_name = basename.rsplit(".", 1)[0] + ".xlsx"
+                    st.session_state.pop(f"_df_cache_{xlsx_name}", None)                    
                 else:
                     (DATA_DIR / basename).write_bytes(file_bytes)
-                restored.append(basename)
+                # Return logical xlsx name for consistency
+                restored.append(basename.rsplit(".", 1)[0] + ".xlsx")
             elif basename.endswith(".xlsx"):
                 save_raw_bytes(basename, file_bytes)
                 restored.append(basename)
