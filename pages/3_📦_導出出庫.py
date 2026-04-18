@@ -146,6 +146,10 @@ def _filter_easystore(df: pd.DataFrame) -> pd.DataFrame:
         _ff_cols = [c for c in ["Remark", "Fulfillment Service", "Fulfillment Status"] if c in _df.columns]
         if _ff_cols:
             _df[_ff_cols] = _df.groupby("Order Name")[_ff_cols].ffill()
+    # 過濾空品項列（EasyStore 同一訂單多品項時，後面會有空列）
+    if "Item Name" in _df.columns:
+        mask = _df["Item Name"].notna() & (_df["Item Name"].astype(str).str.strip() != "")
+        _df = _df[mask].copy()
     mask = pd.Series(True, index=_df.index)
     # 出貨前取消：Fulfillment Service 空 且 Fulfillment Status == Restocked
     if "Fulfillment Service" in _df.columns and "Fulfillment Status" in _df.columns:
@@ -162,17 +166,17 @@ def _filter_easystore(df: pd.DataFrame) -> pd.DataFrame:
 def _build_platform_key(row: pd.Series, platform: str) -> str:
     """根據平台組出對照表的 key (平台商品名稱)"""
     if platform == "蝦皮":
-        name = str(row.get("商品名稱", "")).strip()
-        spec = str(row.get("商品選項名稱", "")).strip()
+        name = _cs(row.get("商品名稱", ""))
+        spec = _cs(row.get("商品選項名稱", ""))
         return f"{name}::{spec}"
     elif platform == "露天":
-        name = str(row.get("商品名稱", "")).strip()
-        spec1 = str(row.get("規格", "")).strip()
-        spec2 = str(row.get("項目", "")).strip()
+        name = _cs(row.get("商品名稱", ""))
+        spec1 = _cs(row.get("規格", ""))
+        spec2 = _cs(row.get("項目", ""))
         return f"{name}::{spec1}::{spec2}"
     elif platform == "官網":
-        name = str(row.get("Item Name", "")).strip()
-        variant = str(row.get("Item Variant", "")).strip()
+        name = _cs(row.get("Item Name", ""))
+        variant = _cs(row.get("Item Variant", ""))
         return f"{name}::{variant}"
     return ""
 
@@ -267,16 +271,16 @@ def generate_delivery() -> pd.DataFrame:
                 sku = sku_info.get("貨號", "")
                 main_sku = sku_info.get("主貨號", "")
                 if platform == "蝦皮":
-                    prod_name = str(row.get("商品名稱", "")).strip()
-                    prod_spec = str(row.get("商品選項名稱", "")).strip()
+                    prod_name = _cs(row.get("商品名稱", ""))
+                    prod_spec = _cs(row.get("商品選項名稱", ""))
                 elif platform == "露天":
-                    prod_name = str(row.get("商品名稱", "")).strip()
-                    s1 = str(row.get("規格", "")).strip()
-                    s2 = str(row.get("項目", "")).strip()
+                    prod_name = _cs(row.get("商品名稱", ""))
+                    s1 = _cs(row.get("規格", ""))
+                    s2 = _cs(row.get("項目", ""))
                     prod_spec = f"{s1}::{s2}".strip("::") if s1 or s2 else ""
                 elif platform == "官網":
-                    prod_name = str(row.get("Item Name", "")).strip()
-                    prod_spec = str(row.get("Item Variant", "")).strip()
+                    prod_name = _cs(row.get("Item Name", ""))
+                    prod_spec = _cs(row.get("Item Variant", ""))
                 else:
                     prod_name = plat_key
                     prod_spec = ""
@@ -339,16 +343,16 @@ def generate_delivery() -> pd.DataFrame:
                         _combo_codes = set(combo["組合貨號"].astype(str).str.strip()) if not combo.empty else set()
                         if raw_order_sku not in _combo_codes:
                             if platform == "蝦皮":
-                                prod_name = str(row.get("商品名稱", "")).strip()
-                                prod_spec = str(row.get("商品選項名稱", "")).strip()
+                                prod_name = _cs(row.get("商品名稱", ""))
+                                prod_spec = _cs(row.get("商品選項名稱", ""))
                             elif platform == "露天":
-                                prod_name = str(row.get("商品名稱", "")).strip()
-                                _s1 = str(row.get("規格", "")).strip()
-                                _s2 = str(row.get("項目", "")).strip()
+                                prod_name = _cs(row.get("商品名稱", ""))
+                                _s1 = _cs(row.get("規格", ""))
+                                _s2 = _cs(row.get("項目", ""))
                                 prod_spec = f"{_s1}::{_s2}".strip("::") if _s1 or _s2 else ""
                             elif platform == "官網":
-                                prod_name = str(row.get("Item Name", "")).strip()
-                                prod_spec = str(row.get("Item Variant", "")).strip()
+                                prod_name = _cs(row.get("Item Name", ""))
+                                prod_spec = _cs(row.get("Item Variant", ""))
                             sku = raw_order_sku
                             main_sku = raw_order_sku.split("-")[0] if "-" in raw_order_sku else raw_order_sku
                             is_unmatched = True

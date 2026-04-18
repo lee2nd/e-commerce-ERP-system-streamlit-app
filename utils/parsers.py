@@ -129,8 +129,8 @@ def parse_ruten(file) -> pd.DataFrame:
     out["單價"] = pd.to_numeric(df["單價"], errors="coerce").fillna(0)
     out["金額"] = out["數量"] * out["單價"]
 
-    s_disc = pd.to_numeric(df.get("賣家折扣碼金額", 0), errors="coerce").fillna(0).abs()
-    p_disc = pd.to_numeric(df.get("露天折扣碼金額", 0), errors="coerce").fillna(0).abs()
+    s_disc = pd.to_numeric(df.get("賣家折扣碼金額", 0), errors="coerce").fillna(0).abs() # type: ignore
+    p_disc = pd.to_numeric(df.get("露天折扣碼金額", 0), errors="coerce").fillna(0).abs() # type: ignore
     out["賣家折扣"] = s_disc + p_disc
 
     out["訂單狀態"] = "正常"
@@ -177,7 +177,7 @@ def parse_easystore(file) -> pd.DataFrame:
     out["數量"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     out["單價"] = pd.to_numeric(df["Item Price"], errors="coerce").fillna(0)
     out["金額"] = out["數量"] * out["單價"]
-    out["賣家折扣"] = pd.to_numeric(df.get("Order Discount", 0), errors="coerce").fillna(0).abs()
+    out["賣家折扣"] = pd.to_numeric(df.get("Order Discount", 0), errors="coerce").fillna(0).abs() # type: ignore
 
     out["訂單狀態"] = "正常"
     if "Financial Status" in df.columns:
