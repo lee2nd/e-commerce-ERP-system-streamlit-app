@@ -6,26 +6,14 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, timezone, timedelta
 from utils.styles import apply_global_styles
-from utils.data_manager import delete_all_data, restore_from_zip
-
-TZ_TAIPEI = timezone(timedelta(hours=8))
-
-def _get_rw_funcs():
-    """Lazy import of read_raw_bytes / save_raw_bytes."""
-    try:
-        from utils.data_manager import read_raw_bytes, save_raw_bytes
-        return read_raw_bytes, save_raw_bytes
-    except ImportError:
-        return None, None
-
-st.set_page_config(page_title="電商平台進銷存系統", page_icon="📊", layout="wide")
-
+from utils.data_manager import delete_all_data, restore_from_zip, read_raw_bytes, save_raw_bytes
 
 apply_global_styles()
-
 # 每 3 分鐘發送 keep-alive 訊號，防止 Hugging Face Spaces 閒置斷線
 st_autorefresh(interval=3 * 60 * 1000, key="keep_alive")
+TZ_TAIPEI = timezone(timedelta(hours=8))
 
+st.set_page_config(page_title="電商平台進銷存系統", page_icon="📊", layout="wide")
 st.title("📊 電商平台 ERP & 報表系統")
 st.caption("蝦皮 ｜ 露天 ｜ 官網 (EasyStore) ｜ MO店")
 
@@ -53,16 +41,6 @@ except Exception:
     pass  # Silently skip memory monitoring if unavailable
 
 st.markdown("---")
-st.subheader("🗂️ 資料備份與還原")
-
-read_raw_bytes, save_raw_bytes = _get_rw_funcs()
-if read_raw_bytes is None or save_raw_bytes is None:
-    st.error(
-        "⚠️ 備份 / 還原功能尚未就緒（部署版本不符，請稍候自動重新部署或手動重新整理頁面）。"
-    )
-    st.stop()
-assert read_raw_bytes is not None
-assert save_raw_bytes is not None
 
 
 # 各檔案的顯示名稱與備註
@@ -81,40 +59,36 @@ _FILE_META: list[tuple[str, str, str]] = [
 ]
 
 # ── 一鍵下載 ZIP ──────────────────────────────────────────────
-st.markdown("#### ⬇️ 一鍵下載全部資料")
+st.markdown("#### ⬇️ 下載全部資料")
 
-if st.button("🔄 產生備份 ZIP", key="gen_zip"):
-    # 清除舊的個別下載快取，釋放記憶體
-    for _f, *_ in _FILE_META:
-        st.session_state.pop(f"_dl_{_f}", None)
-    with st.spinner("讀取所有檔案中…"):
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for fname, *_ in _FILE_META:
-                raw = read_raw_bytes(fname)
-                if raw:
-                    zf.writestr(fname, raw)
-        buf.seek(0)
-        st.session_state["_zip_bytes"] = buf.read()
+if "_zip_bytes" not in st.session_state:
+    with st.spinner("準備備份 ZIP…"):
+        _buf = io.BytesIO()
+        with zipfile.ZipFile(_buf, "w", zipfile.ZIP_DEFLATED) as _zf:
+            for _fname, *_ in _FILE_META:
+                _raw = read_raw_bytes(_fname)
+                if _raw:
+                    _zf.writestr(_fname, _raw)
+        _buf.seek(0)
+        st.session_state["_zip_bytes"] = _buf.read()
         st.session_state["_zip_ts"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y%m%d_%H%M%S")
 
-_zip_bytes = st.session_state.get("_zip_bytes")
-_zip_ts    = st.session_state.get("_zip_ts", "backup")
-if _zip_bytes:
-    st.download_button(
-        label="⬇️ 下載備份 ZIP",
-        data=_zip_bytes,
-        file_name=f"erp_backup_{_zip_ts}.zip",
-        mime="application/zip",
-        key="dl_zip",
-    )
-    st.caption(f"ZIP 產生時間：{_zip_ts}")
+_zip_bytes = st.session_state["_zip_bytes"]
+_zip_ts    = st.session_state["_zip_ts"]
+st.download_button(
+    label="⬇️ 下載備份 ZIP",
+    data=_zip_bytes,
+    file_name=f"erp_backup_{_zip_ts}.zip",
+    mime="application/zip",
+    key="dl_zip",
+)
+st.caption(f"ZIP 產生時間：{_zip_ts}")
 
 st.markdown("---")
 
 # ── 一鍵上傳 ZIP 還原 ────────────────────────────────────────
-st.markdown("#### ⬆️ 一鍵上傳 ZIP 還原")
-st.info("上傳先前下載的備份 ZIP，會將 ZIP 內所有 .xlsx 檔案一次還原（覆蓋現有資料）。")
+st.markdown("#### ⬆️ 上傳全部資料（ZIP）")
+st.info("⚠️ 覆蓋現有資料")
 
 _uploaded_zip = st.file_uploader(
     "選擇備份 ZIP 檔",
@@ -147,8 +121,8 @@ if _t:
 st.markdown("---")
 
 # ── 一鍵全刪 ─────────────────────────────────────────────────
-st.markdown("#### 🗑️ 一鍵刪除全部資料")
-st.error("⚠️ 此操作會**永久刪除**所有資料檔案，無法復原！請務必先下載備份 ZIP。")
+st.markdown("#### 🗑️ 刪除全部資料")
+st.warning("⚠️ 此操作會**永久刪除**所有資料檔案，無法復原！請務必先下載備份 ZIP。")
 
 _col_del1, _col_del2 = st.columns([1, 3])
 with _col_del1:
@@ -198,20 +172,29 @@ for fname, display_name, note in _FILE_META:
                 if _f != fname:
                     st.session_state.pop(f"_dl_{_f}", None)
             st.session_state.pop("_zip_bytes", None)
+            # 優先讀取上次上傳的實際檔名，找不到再 fallback 到槽位預設名稱
+            _actual_fname = st.session_state.get(f"_actual_{fname}", fname)
             with st.spinner("讀取中…"):
-                raw = read_raw_bytes(fname)
+                raw = read_raw_bytes(_actual_fname)
             if raw:
                 st.session_state[f"_dl_{fname}"] = raw
+                st.session_state[f"_dl_name_{fname}"] = _actual_fname
             else:
                 st.warning("目前無資料")
 
         _dl_data = st.session_state.get(f"_dl_{fname}")
         if _dl_data:
+            _dl_fname = st.session_state.get(f"_dl_name_{fname}", fname)
+            _dl_mime = (
+                "text/csv"
+                if _dl_fname.lower().endswith(".csv")
+                else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
             st.download_button(
                 label=f"⬇️ 下載 {display_name}",
                 data=_dl_data,
-                file_name=fname,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                file_name=_dl_fname,
+                mime=_dl_mime,
                 key=f"dl_{fname}",
             )
 
@@ -220,22 +203,25 @@ for fname, display_name, note in _FILE_META:
         # ── 全覆蓋上傳 ────────────────────────────────────────
         uploaded = st.file_uploader(
             f"全覆蓋上傳「{display_name}」",
-            type=["xlsx"],
+            type=["xlsx", "csv"],
             key=f"up_{fname}",
-            help="上傳的 xlsx 會完全取代現有資料（不合併，直接覆蓋）",
+            help="上傳的檔案會完全取代現有資料（不合併，直接覆蓋）。支援 .xlsx 與 .csv。",
         )
         if uploaded:
             st.warning(f"⚠️ 確認後將以上傳檔案完全取代「{display_name}」，操作無法復原！")
             if st.button(f"✅ 確認全覆蓋「{display_name}」", key=f"confirm_{fname}", type="primary"):
                 file_bytes = uploaded.read()
                 try:
-                    save_raw_bytes(fname, file_bytes)
+                    # 以上傳的原始檔名存檔；cache_key 使用槽位名稱清除對應快取
+                    save_raw_bytes(uploaded.name, file_bytes, cache_key=fname)
+                    st.session_state[f"_actual_{fname}"] = uploaded.name
                     ts = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                     st.session_state[f"_ow_ts_{fname}"] = ts
                     # 讓下載快取失效
                     st.session_state.pop(f"_dl_{fname}", None)
+                    st.session_state.pop(f"_dl_name_{fname}", None)
                     st.session_state.pop("_zip_bytes", None)
-                    st.session_state[f"_toast_ow_{fname}"] = f"✅ 「{display_name}」已全覆蓋上傳！（{ts}）"
+                    st.session_state[f"_toast_ow_{fname}"] = f"✅ 「{display_name}」已全覆蓋上傳（{uploaded.name}）！（{ts}）"
                     st.rerun()
                 except Exception as e:
                     st.error(f"上傳失敗：{e}")

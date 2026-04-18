@@ -425,16 +425,20 @@ def _clear_file_cache(filename: str):
         load_custom_orders.clear()
 
 
-def save_raw_bytes(filename: str, file_bytes: bytes):
-    """以原始 bytes 全覆蓋指定檔案，並清除相關快取。"""
+def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = None):
+    """以原始 bytes 全覆蓋指定檔案，並清除相關快取。
+    cache_key：指定要清除快取的槽位檔名（預設與 filename 相同），
+               當以原始上傳檔名存檔時傳入對應的 .xlsx 槽位名稱。
+    """
     if _is_cloud():
         _r2_write_bytes(filename, file_bytes)
-        # 讓下一次 rerun 讀取到最新資料
-        df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
-        st.session_state[f"_df_cache_{filename}"] = df.copy()
+        # 僅 xlsx 才能用 read_excel 建立 df 快取
+        if filename.lower().endswith(".xlsx"):
+            df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+            st.session_state[f"_df_cache_{filename}"] = df.copy()
     else:
         (DATA_DIR / filename).write_bytes(file_bytes)
-    _clear_file_cache(filename)
+    _clear_file_cache(cache_key or filename)
 
 
 def _clear_all_caches():

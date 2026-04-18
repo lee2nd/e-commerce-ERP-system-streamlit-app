@@ -95,7 +95,11 @@ h3 {
 .stButton > button[kind="primary"] {
     background: linear-gradient(135deg, #2563EB 0%, #1d4ed8 100%) !important;
     border: none !important;
+    color: white !important;
     box-shadow: 0 2px 6px rgba(37,99,235,0.30) !important;
+}
+.stButton > button[kind="primary"]:disabled {
+    color: white !important;
 }
 
 /* ── Tabs ────────────────────────────────────────────────── */
