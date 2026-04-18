@@ -431,7 +431,10 @@ streamlit run app.py
 7. **效果**：每個分頁的 rerun 作用域獨立，操作哪個 tab 就只重跑那個 tab，其他分頁不受影響
 8. **相關調整**：所有 `st.rerun()` 改為 `st.rerun(scope="fragment")`，確保狀態刷新限縮在當前 fragment 內；`requirements.txt` 最低版本需求由 `1.30.0` 提升至 `1.37.0`（`@st.fragment` 引入版本）
 
----
+9. **「各平台累積訂單」改為 expander 預設折疊**
+   - 背景：`@st.fragment` 只對互動後的 rerun 有效；首次進入頁面時四個 fragment 仍依序執行，平台訂單的大表格 Arrow 序列化依然發生
+   - 修正：將蝦皮、露天、官網三個平台訂單的 `st.dataframe` 包進 `st.expander`（`expanded=False`），預設折疊，手動展開時才渲染
+   - 效果：頁面初始載入不再序列化三份大型訂單資料，速度明顯提升
 
 ---
 

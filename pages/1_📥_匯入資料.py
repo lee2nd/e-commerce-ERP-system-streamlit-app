@@ -3,7 +3,6 @@ import pandas as pd
 from datetime import datetime, timezone, timedelta
 
 from utils.data_manager import (
-    DATA_DIR,
     load_storage, save_storage,
     load_platform_orders, append_platform_orders,
     clear_storage, clear_platform_orders,
@@ -55,10 +54,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-
-TEMPLATE_PATH = DATA_DIR / "入庫.xlsx"
-
 
 # ══════════════════════════════════════════════════════════════
 # Tab 1 – 匯入入庫資料
@@ -402,27 +397,27 @@ def _render_order_tab():
     st.subheader("各平台累積訂單")
     for plat_name, plat_file in [("\U0001f6d2 蝦皮", "蝦皮"), ("\U0001f3ea 露天", "露天"), ("\U0001f310 官網", "官網")]:
         pdf = load_platform_orders(plat_file)
-        st.markdown(f"**{plat_name}**（{len(pdf)} 筆）")
-        if not pdf.empty:
-            _p_page_size = 500
-            _p_total = len(pdf)
-            _p_total_pages = max(1, (_p_total - 1) // _p_page_size + 1)
-            _p_dl_col, _p_pg_col = st.columns([1, 3])
-            _p_dl_col.download_button(f"⬇️ 下載{plat_file}全部訂單", data=_df_to_csv_bytes(pdf), file_name=f"{plat_file}訂單.csv", mime="text/csv", key=f"dl_ord_{plat_file}")
-            if _p_total_pages > 1:
-                _p_page = _p_pg_col.selectbox(
-                    "頁碼", list(range(1, _p_total_pages + 1)),
-                    format_func=lambda x: f"{x}/{_p_total_pages} 頁",
-                    key=f"ord_page_{plat_file}",
-                )
+        with st.expander(f"**{plat_name}**（{len(pdf)} 筆）", expanded=False):
+            if not pdf.empty:
+                _p_page_size = 500
+                _p_total = len(pdf)
+                _p_total_pages = max(1, (_p_total - 1) // _p_page_size + 1)
+                _p_dl_col, _p_pg_col = st.columns([1, 3])
+                _p_dl_col.download_button(f"⬇️ 下載{plat_file}全部訂單", data=_df_to_csv_bytes(pdf), file_name=f"{plat_file}訂單.csv", mime="text/csv", key=f"dl_ord_{plat_file}")
+                if _p_total_pages > 1:
+                    _p_page = _p_pg_col.selectbox(
+                        "頁碼", list(range(1, _p_total_pages + 1)),
+                        format_func=lambda x: f"{x}/{_p_total_pages} 頁",
+                        key=f"ord_page_{plat_file}",
+                    )
+                else:
+                    _p_page = 1
+                _p_start = (_p_page - 1) * _p_page_size
+                _pdf_slice = _to_arrow_safe_display_df(pdf).iloc[_p_start:_p_start + _p_page_size]
+                st.dataframe(_pdf_slice, width='stretch', hide_index=True)
+                st.caption(f"第 {_p_page} 頁 / 共 {_p_total_pages} 頁（{_p_total:,} 筆）")
             else:
-                _p_page = 1
-            _p_start = (_p_page - 1) * _p_page_size
-            _pdf_slice = _to_arrow_safe_display_df(pdf).iloc[_p_start:_p_start + _p_page_size]
-            st.dataframe(_pdf_slice, width='stretch', hide_index=True)
-            st.caption(f"第 {_p_page} 頁 / 共 {_p_total_pages} 頁（{_p_total:,} 筆）")
-        else:
-            st.info(f"尚未匯入{plat_file}訂單")
+                st.info(f"尚未匯入{plat_file}訂單")
 
     # ── 清0 平台訂單 ───────────────────────────────────────────
     st.markdown("---")
