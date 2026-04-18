@@ -260,7 +260,7 @@ streamlit run app.py
     - 修正方式：所有產生「最後儲存時間」的呼叫改用 `TZ_TAIPEI = timezone(timedelta(hours=8))`，即 `datetime.now(tz=TZ_TAIPEI)`
     - 無需安裝額外套件（使用標準庫 `datetime.timezone` + `datetime.timedelta`）
     - 影響檔案：`app.py`、`pages/1_📥_匯入資料.py`、`pages/2_📋_對照表.py`、`pages/3_📦_導出出庫.py`、`pages/4_🔎_庫存明細.py`、`pages/5_📊_日報表.py`、`pages/6_📈_月報表.py`
-    
+
 ## 4/12 完成項目
 
 ### 效能優化（Streamlit Community Cloud 記憶體瓶頸）
@@ -402,6 +402,28 @@ streamlit run app.py
    - 問題：切換至「組合貨號」或「自建訂單」分頁時明顯卡頓
    - 根本原因：Streamlit tab 並非懶載入，每次互動都會重跑整個腳本；`tab_custom` 中的 `to_excel(..., engine="openpyxl")` 序列化非常耗時，不論在哪個分頁操作都會執行
    - 修正：新增 `@st.cache_data` 包裝的 `_df_to_excel_bytes()` 函式，對 DataFrame 做雜湊，僅在資料實際變更時重新序列化，其他情況直接回傳快取 bytes
+
+    
+## 4/18 完成項目
+
+### 雲端儲存層遷移：GitHub API → Cloudflare R2
+
+1. **資料儲存改為 Cloudflare R2**
+   - 原本雲端（Hugging Face Spaces）讀寫資料是透過 GitHub Contents API commit/push，延遲高
+   - 全面改為 Cloudflare R2（S3-compatible object storage），讀取走公開 `r2.dev` URL，寫入/刪除透過 boto3 SigV4 簽名
+   - 讀取速度大幅提升，不再受 GitHub API rate limit 與 commit 延遲影響
+
+2. **環境變數調整**
+   - 移除：`GITHUB_TOKEN`、`GITHUB_OWNER`、`GITHUB_REPO`、`GITHUB_BRANCH`
+   - 新增：`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`（從 Cloudflare R2 API Token 取得）
+
+3. **依賴套件新增 `boto3`**
+
+4. **`data/` 資料夾從 repo 移除，資料改存於 R2 bucket `lee2nd-erp`**
+
+5. **修正一鍵刪除全部資料遺漏 `自建訂單.xlsx`**
+
+---
 
 ## CICD Issues
 1. 顯示隱藏的項目的 .git folder 刪掉

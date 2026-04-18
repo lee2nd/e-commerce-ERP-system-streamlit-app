@@ -452,7 +452,7 @@ def delete_all_data():
     files = [f for f, *_ in [
         ("入庫.xlsx",), ("出庫.xlsx",), ("對照表.xlsx",), ("庫存明細.xlsx",),
         ("日報表.xlsx",), ("月報表.xlsx",), ("組合貨號.xlsx",),
-        ("蝦皮.xlsx",), ("露天.xlsx",), ("官網.xlsx",),
+        ("蝦皮.xlsx",), ("露天.xlsx",), ("官網.xlsx",), ("自建訂單.xlsx",),
     ]]
     deleted = []
     if _is_cloud():
