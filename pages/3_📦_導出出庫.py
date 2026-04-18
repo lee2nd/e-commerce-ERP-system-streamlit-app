@@ -178,6 +178,9 @@ def _build_platform_key(row: pd.Series, platform: str) -> str:
         name = _cs(row.get("Item Name", ""))
         variant = _cs(row.get("Item Variant", ""))
         return f"{name}::{variant}"
+    elif platform == "MO店":
+        name = _cs(row.get("商品名稱", ""))
+        return name
     return ""
 
 
@@ -199,6 +202,10 @@ def _get_order_data(row: pd.Series, platform: str) -> dict:
         qty = row.get("Quantity", 0)
         price = row.get("Item Price", 0)
         date = str(row.get("Date", ""))[:10]
+    elif platform == "MO店":
+        qty = row.get("數量", 0)
+        price = row.get("商品售價", 0)
+        date = str(row.get("轉單日", ""))[:10]
     else:
         qty, price, date = 0, 0, ""
     
@@ -230,9 +237,29 @@ def _get_row_sku(row: pd.Series, platform: str) -> str:
         raw = str(row.get("賣家自用料號", "")).strip()
     elif platform == "官網":
         raw = str(row.get("Item SKU", "")).strip()
+    elif platform == "MO店":
+        raw = str(row.get("商品原廠編號", "")).strip()
     else:
         raw = ""
     return "" if raw.lower() in _nl else raw
+
+
+def _filter_mo(df: pd.DataFrame) -> pd.DataFrame:
+    """MO店：取消訂單跳過不出庫"""
+    if df.empty:
+        return df
+    mask = pd.Series(True, index=df.index)
+    if "訂單狀態" in df.columns:
+        order_stat = df["訂單狀態"].fillna("").astype(str)
+        mask &= order_stat != "取消訂單"
+        # 已回收 = 退貨 → 不出庫
+        mask &= order_stat != "已回收"
+        # 配送異常 = 未取貨 → 不出庫
+        mask &= order_stat != "配送異常"
+    if "銷退原因" in df.columns:
+        ret_reason = df["銷退原因"].fillna("").astype(str)
+        mask &= ret_reason != "配送異常結案"
+    return df[mask].copy()
 
 
 def generate_delivery() -> pd.DataFrame:
@@ -243,6 +270,7 @@ def generate_delivery() -> pd.DataFrame:
         ("蝦皮", _filter_shopee),
         ("露天", _filter_ruten),
         ("官網", _filter_easystore),
+        ("MO店", _filter_mo),
     ]
     
     for platform, filter_func in platform_config:
@@ -281,6 +309,9 @@ def generate_delivery() -> pd.DataFrame:
                 elif platform == "官網":
                     prod_name = _cs(row.get("Item Name", ""))
                     prod_spec = _cs(row.get("Item Variant", ""))
+                elif platform == "MO店":
+                    prod_name = _cs(row.get("商品名稱", ""))
+                    prod_spec = ""
                 else:
                     prod_name = plat_key
                     prod_spec = ""
@@ -353,6 +384,9 @@ def generate_delivery() -> pd.DataFrame:
                             elif platform == "官網":
                                 prod_name = _cs(row.get("Item Name", ""))
                                 prod_spec = _cs(row.get("Item Variant", ""))
+                            elif platform == "MO店":
+                                prod_name = _cs(row.get("商品名稱", ""))
+                                prod_spec = ""
                             sku = raw_order_sku
                             main_sku = raw_order_sku.split("-")[0] if "-" in raw_order_sku else raw_order_sku
                             is_unmatched = True
@@ -433,9 +467,9 @@ def generate_delivery() -> pd.DataFrame:
 existing_delivery = load_delivery()
 if not existing_delivery.empty:
 
-    colors = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "其他": "#F39C12"}
+    colors = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "MO店": "#AB63FA", "其他": "#F39C12"}
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     c1.metric("總筆數", len(existing_delivery))
     c2.metric("總金額", f"${existing_delivery['金額'].sum():,.0f}")
 
@@ -459,9 +493,12 @@ if not existing_delivery.empty:
     # 5. 官網
     official_count = len(existing_delivery[existing_delivery["平台"] == "官網"])
     custom_metric("官網", official_count, colors["官網"], c5)
-    # 6. 其他（自建）
+    # 6. MO店
+    mo_count = len(existing_delivery[existing_delivery["平台"] == "MO店"])
+    custom_metric("MO店", mo_count, colors["MO店"], c6)
+    # 7. 其他（自建）
     other_count = len(existing_delivery[existing_delivery["平台"] == "其他"])
-    custom_metric("其他", other_count, colors["其他"], c6)
+    custom_metric("其他", other_count, colors["其他"], c7)
 
 
 # 顯示對照表匹配狀態
@@ -531,7 +568,7 @@ else:
     view_dlv = view_dlv[_cols]
 
     # 平台顏色標註
-    _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "其他": "#F39C12"}
+    _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "MO店": "#AB63FA", "其他": "#F39C12"}
 
     def _highlight_row(row):
         color = _PLAT_COLORS.get(row.get("平台", ""), "")

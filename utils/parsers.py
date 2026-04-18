@@ -189,3 +189,36 @@ def parse_easystore(file) -> pd.DataFrame:
 
     out = out[out["訂單編號"].notna() & ~out["訂單編號"].isin(["", "nan"])]
     return out.reset_index(drop=True)
+
+
+# ── MO店 ─────────────────────────────────────────────────────
+def parse_mo(file) -> pd.DataFrame:
+    df = read_file_flexible(file)
+
+    out = pd.DataFrame()
+    out["訂單編號"] = df["訂單編號"].astype(str).str.strip()
+    out["日期"]     = pd.to_datetime(df["轉單日"].astype(str).str[:10], errors="coerce")
+    out["平台"]     = "MO店"
+
+    name = df["商品名稱"].fillna("").astype(str)
+    out["平台商品名稱"] = name
+
+    out["貨號"] = df["商品原廠編號"].astype(str).str.strip() if "商品原廠編號" in df.columns else ""
+    out["數量"] = pd.to_numeric(df["數量"], errors="coerce").fillna(0).astype(int)
+    out["單價"] = pd.to_numeric(df["商品售價"], errors="coerce").fillna(0)
+    out["金額"] = out["數量"] * out["單價"]
+    out["賣家折扣"] = 0
+
+    # 訂單狀態
+    order_stat = df["訂單狀態"].fillna("").astype(str)
+    ret_reason = df["銷退原因"].fillna("").astype(str)
+
+    out["訂單狀態"] = "正常"
+    out.loc[order_stat == "配送結束", "訂單狀態"] = "已完成"
+    out.loc[order_stat == "已回收", "訂單狀態"] = "退貨"
+    out.loc[order_stat == "配送異常", "訂單狀態"] = "未取貨"
+    out.loc[ret_reason == "配送異常結案", "訂單狀態"] = "未取貨"
+    out.loc[order_stat == "取消訂單", "訂單狀態"] = "已取消"
+
+    out = out[out["訂單編號"].notna() & ~out["訂單編號"].isin(["", "nan"])]
+    return out.reset_index(drop=True)

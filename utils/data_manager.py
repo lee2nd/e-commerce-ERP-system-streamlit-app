@@ -427,7 +427,7 @@ def _clear_file_cache(filename: str):
         load_daily_report.clear()
     elif filename == "組合貨號.xlsx":
         load_combo_sku.clear()
-    elif filename in ("蝦皮.xlsx", "露天.xlsx", "官網.xlsx"):
+    elif filename in ("蝦皮.xlsx", "露天.xlsx", "官網.xlsx", "MO店.xlsx"):
         load_platform_orders.clear()
     elif filename == "自建訂單.xlsx":
         load_custom_orders.clear()
@@ -467,7 +467,7 @@ def delete_all_data():
     files = [f for f, *_ in [
         ("入庫.xlsx",), ("出庫.xlsx",), ("對照表.xlsx",), ("庫存明細.xlsx",),
         ("日報表.xlsx",), ("月報表.xlsx",), ("組合貨號.xlsx",),
-        ("蝦皮.xlsx",), ("露天.xlsx",), ("官網.xlsx",), ("自建訂單.xlsx",),
+        ("蝦皮.xlsx",), ("露天.xlsx",), ("官網.xlsx",), ("MO店.xlsx",), ("自建訂單.xlsx",),
     ]]
     deleted = []
     if _is_cloud():

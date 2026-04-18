@@ -10,7 +10,7 @@ from utils.data_manager import (
     load_custom_orders, save_custom_orders, clear_custom_orders,
     _CUSTOM_ORDER_COLS,
 )
-from utils.parsers import parse_shopee, parse_ruten, parse_easystore, read_file_flexible
+from utils.parsers import parse_shopee, parse_ruten, parse_easystore, parse_mo, read_file_flexible
 from utils.styles import apply_global_styles
 
 TZ_TAIPEI = timezone(timedelta(hours=8))
@@ -364,7 +364,7 @@ def _render_order_tab():
             raw_preview = read_file_flexible(uploaded)
             uploaded.seek(0)  # 重置指標供後續 parser 使用
 
-            plat_short = "蝦皮" if "蝦皮" in platform else ("露天" if "露天" in platform else "官網")
+            plat_short = "蝦皮" if "蝦皮" in platform else ("露天" if "露天" in platform else ("MO店" if "MO店" in platform else "官網"))
             col_ok, col_msg = _check_platform_columns(len(raw_preview.columns), plat_short)
             if not col_ok:
                 st.error(col_msg)
@@ -375,6 +375,8 @@ def _render_order_tab():
                     new = parse_shopee(uploaded)
                 elif "露天" in platform:
                     new = parse_ruten(uploaded)
+                elif "MO店" in platform:
+                    new = parse_mo(uploaded)
                 else:
                     new = parse_easystore(uploaded)
 
@@ -395,7 +397,7 @@ def _render_order_tab():
 
     st.markdown("---")
     st.subheader("各平台累積訂單")
-    for plat_name, plat_file in [("\U0001f6d2 蝦皮", "蝦皮"), ("\U0001f3ea 露天", "露天"), ("\U0001f310 官網", "官網")]:
+    for plat_name, plat_file in [("\U0001f6d2 蝦皮", "蝦皮"), ("\U0001f3ea 露天", "露天"), ("\U0001f310 官網", "官網"), ("🏪 MO店", "MO店")]:
         pdf = load_platform_orders(plat_file)
         with st.expander(f"**{plat_name}**（{len(pdf)} 筆）", expanded=False):
             if not pdf.empty:
@@ -424,11 +426,11 @@ def _render_order_tab():
     if st.button("🗑️ 清除所有平台訂單", key="clear_orders_btn"):
         st.session_state["confirm_clear_orders"] = True
     if st.session_state.get("confirm_clear_orders"):
-        st.warning("⚠️ 確定要清除所有平台訂單（蝦皮、露天、官網）嗎？此操作無法復原！")
+        st.warning("⚠️ 確定要清除所有平台訂單（蝦皮、露天、官網、MO店）嗎？此操作無法復原！")
         _c1, _c2 = st.columns(2)
         if _c1.button("✅ 確認清除", key="confirm_clear_orders_yes", type="primary"):
             with st.spinner("清除中…"):
-                for _plat in ["蝦皮", "露天", "官網"]:
+                for _plat in ["蝦皮", "露天", "官網", "MO店"]:
                     clear_platform_orders(_plat)
             st.session_state.pop("confirm_clear_orders", None)
             st.success("✅ 所有平台訂單已清除")

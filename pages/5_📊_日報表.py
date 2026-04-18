@@ -32,9 +32,10 @@ if st.button("🔄 重新產生日報表", type="primary"):
     shopee_raw    = load_platform_orders("蝦皮")
     ruten_raw     = load_platform_orders("露天")
     easystore_raw = load_platform_orders("官網")
+    mo_raw        = load_platform_orders("MO店")
     custom_raw    = load_custom_orders()
 
-    if shopee_raw.empty and ruten_raw.empty and easystore_raw.empty and custom_raw.empty:
+    if shopee_raw.empty and ruten_raw.empty and easystore_raw.empty and mo_raw.empty and custom_raw.empty:
         st.warning("無訂單資料，請先至「匯入資料」頁面匯入平台訂單")
     else:
         compare = load_compare_table()
@@ -44,6 +45,7 @@ if st.button("🔄 重新產生日報表", type="primary"):
                 shopee_raw, ruten_raw, easystore_raw,
                 compare, storage, settings, load_combo_sku(),
                 custom_raw=custom_raw if not custom_raw.empty else None,
+                mo_raw=mo_raw if not mo_raw.empty else None,
             )
         if daily.empty:
             st.warning("計算結果為空，請確認資料是否正確")

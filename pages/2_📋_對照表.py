@@ -10,7 +10,7 @@ from utils.data_manager import (
     load_combo_sku,
     load_custom_orders,
 )
-from utils.parsers import parse_shopee, parse_ruten, parse_easystore
+from utils.parsers import parse_shopee, parse_ruten, parse_easystore, parse_mo
 from utils.calculators import auto_match_compare_table
 from utils.styles import apply_global_styles
 
@@ -60,7 +60,7 @@ if not compare.empty:
 
 if st.button("🔄 重新掃描訂單", type="primary"):
     parts = []
-    for plat, parser in [("蝦皮", parse_shopee), ("露天", parse_ruten), ("官網", parse_easystore)]:
+    for plat, parser in [("蝦皮", parse_shopee), ("露天", parse_ruten), ("官網", parse_easystore), ("MO店", parse_mo)]:
         raw = load_platform_orders(plat)
         if not raw.empty:
             buf = io.BytesIO()
@@ -101,7 +101,7 @@ if st.button("🔄 重新掃描訂單", type="primary"):
     else:
         updated = auto_match_compare_table(orders, storage, compare, load_combo_sku())
         # 依平台排序
-        _plat_order = {"蝦皮": 0, "露天": 1, "官網": 2, "其他": 3}
+        _plat_order = {"蝦皮": 0, "露天": 1, "官網": 2, "MO店": 3, "其他": 4}
         updated["_sort"] = updated["平台"].map(_plat_order).fillna(9)
         updated = updated.sort_values(["_sort", "平台商品名稱"]).drop(columns="_sort").reset_index(drop=True)
         save_compare_table(updated)
@@ -136,7 +136,7 @@ if not compare.empty:
     if view.empty:
         st.info("沒有符合條件的項目")
     else:
-        _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "其他": "#F39C12"}
+        _PLAT_COLORS = {"蝦皮": "#FF6B35", "露天": "#4A90D9", "官網": "#2ECC71", "MO店": "#AB63FA", "其他": "#F39C12"}
 
         # 建立顯示用的 入庫品名 欄位：組合商品顯示 [組合] 並附上原料名稱
         def _format_stg_name(row):

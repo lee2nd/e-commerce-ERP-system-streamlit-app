@@ -730,6 +730,140 @@ def _process_custom(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
     return result
 
 
+def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
+    """Process MO店 raw orders into daily report rows."""
+    if df.empty:
+        return []
+    records = []
+    for _, row in df.iterrows():
+        oid = _s(row.get("訂單編號", ""))
+        if not oid:
+            continue
+
+        order_stat = _s(row.get("訂單狀態", ""))
+        ret_reason = _s(row.get("銷退原因", ""))
+
+        # 取消訂單不列入日報表
+        if order_stat == "取消訂單":
+            continue
+
+        if ret_reason == "配送異常結案":
+            status = "未取貨"
+        elif order_stat == "已回收":
+            status = "退貨"
+        elif order_stat == "配送異常":
+            status = "未取貨"
+        elif order_stat == "配送結束":
+            status = "已完成"
+        else:
+            status = "已完成"
+
+        sku = _s(row.get("商品原廠編號", ""))
+        qty = int(_n(row.get("數量", 0)))
+        price = _n(row.get("商品售價", 0))
+
+        stg_info = stg.get(sku, {})
+        item_cost = stg_info.get("成本", 0) * qty if stg_info else 0
+        items = _expand_items_for_combo(sku, qty, stg, combo_df)
+        if len(items) == 1 and not stg_info:
+            items[0]["名稱"] = items[0]["名稱"] or _s(row.get("商品名稱", ""))
+
+        coupon = (abs(_n(row.get("單品折價券(商品自折)", 0)))
+                  + abs(_n(row.get("行銷活動促銷(商品自折)", 0)))
+                  + abs(_n(row.get("單店抵用券(商品自折)", 0))))
+        buyer_ship = _n(row.get("客人支付運費", 0))
+        plat_ship = abs(_n(row.get("商品滿額免運費", 0)))
+        actual_ship = abs(_n(row.get("預估平台代扣運費(鑑賞期後:平台代扣運費)", 0)))
+        tx_fee = abs(_n(row.get("成交手續費", 0)))
+        svc_fee_pre = abs(_n(row.get("預購商品服務費", 0)))
+        svc_fee_hidden = abs(_n(row.get("物流隱碼服務費", 0)))
+        svc_fee_activity = abs(_n(row.get("活動服務費", 0)))
+        other_svc = svc_fee_pre + svc_fee_hidden + svc_fee_activity
+        pay_fee = abs(_n(row.get("金流與系統處理費", 0)))
+        invoice_fee = abs(_n(row.get("發票處理費", 0)))
+
+        # 未取貨/退貨運費：已回收 AND 配送異常 → 活動服務費 + 訂單進帳金額
+        ret_ship = 0.0
+        if order_stat in ("已回收", "配送異常"):
+            ret_ship = abs(_n(row.get("活動服務費", 0))) + abs(_n(row.get("訂單進帳金額", 0)))
+
+        records.append({
+            "_oid": oid,
+            "_date": _s(row.get("轉單日", ""))[:10].replace("/", "-"),
+            "_status": status,
+            "_items": items,
+            "_line_amt": price * qty,
+            "_item_cost": item_cost,
+            "_matched": bool(stg_info),
+            "_coupon": coupon,
+            "_buyer_ship": buyer_ship,
+            "_plat_ship": plat_ship,
+            "_actual_ship": actual_ship,
+            "_ret_ship": ret_ship,
+            "_tx_fee": tx_fee,
+            "_other_svc": other_svc,
+            "_pay_fee": pay_fee,
+            "_invoice_fee": invoice_fee,
+        })
+
+    result = []
+    records.sort(key=lambda x: x["_oid"])
+    from itertools import groupby as _groupby
+    for oid, grp in _groupby(records, key=lambda x: x["_oid"]):
+        rows = list(grp)
+        f = rows[0]
+        status = f["_status"]
+        is_ret = status in ("退貨", "未取貨")
+
+        total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
+        total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
+
+        coupon = sum(r["_coupon"] for r in rows) if not is_ret else 0
+        buyer_ship = f["_buyer_ship"]
+        plat_ship = f["_plat_ship"]
+        actual_ship = f["_actual_ship"]
+        logistics_diff = buyer_ship - actual_ship
+        ret_ship = sum(r["_ret_ship"] for r in rows)
+        tx_fee = sum(r["_tx_fee"] for r in rows) if not is_ret else 0
+        other_svc = sum(r["_other_svc"] for r in rows) if not is_ret else 0
+        pay_fee = f["_pay_fee"] if not is_ret else 0
+        invoice_fee = f["_invoice_fee"] if not is_ret else 0
+
+        if is_ret:
+            buyer_ship = 0
+            plat_ship = 0
+            actual_ship = 0
+            logistics_diff = 0
+
+        total_cost = (total_cost_item + coupon + logistics_diff + ret_ship
+                      + tx_fee + other_svc + pay_fee + invoice_fee)
+        profit = total_amt - total_cost
+
+        item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
+        result.append({
+            "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
+            "商品名稱": item_name_str, "貨號": sku_str,
+            "訂單金額": round(total_amt, 0),
+            "折扣優惠": round(coupon, 0),
+            "買家支付運費": round(buyer_ship, 0),
+            "平台補助運費": round(plat_ship, 0),
+            "實際運費支出": round(actual_ship, 0),
+            "物流處理費（運費差額）": round(logistics_diff, 0),
+            "未取貨/退貨運費": round(ret_ship, 0),
+            "成交手續費": round(tx_fee, 0),
+            "其他服務費": round(other_svc, 0),
+            "金流與系統處理費": round(pay_fee, 0),
+            "發票處理費": round(invoice_fee, 0),
+            "其他費用": 0,
+            "商品成本": round(total_cost_item, 0),
+            "總成本": round(total_cost, 0),
+            "淨利": round(profit, 0),
+            "備註": "" if all(r["_matched"] for r in rows) else "未匹配",
+            "平台": "MO店",
+        })
+    return result
+
+
 def generate_daily_report(
     shopee_raw: pd.DataFrame,
     ruten_raw: pd.DataFrame,
@@ -739,6 +873,7 @@ def generate_daily_report(
     settings: dict,
     combo_df: pd.DataFrame | None = None,
     custom_raw: pd.DataFrame | None = None,
+    mo_raw: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Generate daily report from raw platform DataFrames.
@@ -753,6 +888,7 @@ def generate_daily_report(
         + _process_ruten(ruten_raw, stg, settings, combo_df)
         + _process_easystore(easystore_raw, stg, settings, combo_df)
         + (_process_custom(custom_raw, stg, combo_df) if custom_raw is not None else [])
+        + (_process_mo(mo_raw, stg, combo_df) if mo_raw is not None else [])
     )
     if not all_records:
         return pd.DataFrame()
