@@ -621,7 +621,8 @@ def _render_custom_tab():
                 + valid["未取貨/退貨運費"] + valid["其他費用"]
             )
             valid["訂單總金額"] = valid["小計"] - valid["費用小記"]
-            valid["日期"] = valid["日期"].replace("NaT", pd.Timestamp.now(tz="Asia/Taipei").strftime("%Y-%m-%d"))
+            valid["日期"] = pd.to_datetime(valid["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+            valid["日期"] = valid["日期"].fillna(pd.Timestamp.now(tz="Asia/Taipei").strftime("%Y-%m-%d"))
             for _sc in ["平台名稱", "訂單編號", "訂單狀態", "貨號", "買家姓名", "買家帳號"]:
                 if _sc in valid.columns:
                     valid[_sc] = valid[_sc].fillna("").astype(str).str.strip()

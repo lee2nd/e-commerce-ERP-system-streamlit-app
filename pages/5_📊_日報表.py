@@ -152,8 +152,6 @@ money_cols = [c for c in ["訂單金額", "折扣優惠", "買家支付運費", 
                            "發票處理費", "其他費用", "商品成本", "總成本", "淨利"]
               if c in view.columns]
 
-st.markdown("### 明細")
-
 # 準備 editor 用 DataFrame（移除內部欄位，保留原始 index 供回寫）
 view_edit = view.drop(columns=["_unmatched"], errors="ignore").copy()
 
