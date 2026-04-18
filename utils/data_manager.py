@@ -374,11 +374,19 @@ _CUSTOM_ORDER_COLS = [
 
 @st.cache_data(ttl=300)
 def load_custom_orders() -> pd.DataFrame:
-    return _load_excel("自建訂單.xlsx")
+    df = _load_excel("自建訂單.xlsx")
+    if not df.empty and "日期" in df.columns:
+        df["日期"] = pd.to_datetime(df["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+        df["日期"] = df["日期"].fillna("")
+    return df
 
 
 def save_custom_orders(df: pd.DataFrame):
-    _save_excel(df, "自建訂單.xlsx", "chore: update 自建訂單.xlsx")
+    out = df.copy()
+    if "日期" in out.columns:
+        out["日期"] = pd.to_datetime(out["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+        out["日期"] = out["日期"].fillna("")
+    _save_excel(out, "自建訂單.xlsx", "chore: update 自建訂單.xlsx")
     load_custom_orders.clear()
 
 
