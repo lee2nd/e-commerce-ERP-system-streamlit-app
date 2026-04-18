@@ -421,6 +421,8 @@ def _clear_file_cache(filename: str):
         load_combo_sku.clear()
     elif filename in ("蝦皮.xlsx", "露天.xlsx", "官網.xlsx"):
         load_platform_orders.clear()
+    elif filename == "自建訂單.xlsx":
+        load_custom_orders.clear()
 
 
 def save_raw_bytes(filename: str, file_bytes: bytes):
@@ -445,6 +447,7 @@ def _clear_all_caches():
     load_daily_report.clear()
     load_combo_sku.clear()
     load_platform_orders.clear()
+    load_custom_orders.clear()
 
 
 def delete_all_data():
