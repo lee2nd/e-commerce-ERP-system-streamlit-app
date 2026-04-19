@@ -345,7 +345,6 @@ def _render_order_tab():
         "蝦皮": 57,
         "露天": 26,
         "官網": 77,
-        "MO店": 81,
     }
 
     def _check_platform_columns(col_count, selected_platform):
@@ -361,8 +360,9 @@ def _render_order_tab():
 
     if uploaded and st.button("🚀 開始匯入訂單", type="primary"):
         try:
-            # 先讀取原始檔案做欄位檢查（只讀一次，直接傳給 parser）
+            # 先讀取原始檔案做欄位檢查
             raw_preview = read_file_flexible(uploaded)
+            uploaded.seek(0)  # 重置指標供後續 parser 使用
 
             _PLAT_SHORT_MAP = {"蝦皮": "蝦皮", "露天": "露天", "MO店": "MO店", "官網 (EasyStore)": "官網"}
             plat_short = _PLAT_SHORT_MAP.get(platform, "官網")
@@ -373,13 +373,13 @@ def _render_order_tab():
 
             with st.spinner("解析中…"):
                 if "蝦皮" in platform:
-                    new = parse_shopee(raw_preview)
+                    new = parse_shopee(uploaded)
                 elif "露天" in platform:
-                    new = parse_ruten(raw_preview)
+                    new = parse_ruten(uploaded)
                 elif "MO店" in platform:
-                    new = parse_mo(raw_preview)
+                    new = parse_mo(uploaded)
                 else:
-                    new = parse_easystore(raw_preview)
+                    new = parse_easystore(uploaded)
 
             if new.empty:
                 st.warning("未解析到任何訂單")

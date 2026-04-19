@@ -449,21 +449,6 @@ def read_raw_bytes(filename: str) -> bytes | None:
         return None
 
 
-def read_raw_parquet_bytes(filename: str) -> bytes | None:
-    """讀取指定檔案，直接回傳 parquet 原始 bytes（不轉 Excel，速度快）。"""
-    pq_name = _parquet_name(filename)
-    try:
-        if _is_cloud():
-            return _r2_read_bytes(pq_name)
-        else:
-            pq_path = DATA_DIR / pq_name
-            if not pq_path.exists() or pq_path.stat().st_size == 0:
-                return None
-            return pq_path.read_bytes()
-    except Exception:
-        return None
-
-
 def _clear_file_cache(filename: str):
     """清除指定檔案對應的 st.cache_data 快取。"""
     if filename == "入庫.xlsx":
@@ -557,28 +542,20 @@ def delete_all_data():
 
 
 def restore_from_zip(zip_bytes: bytes) -> list[str]:
-    """從 ZIP 檔還原所有 .xlsx / .parquet 檔案到 DATA_DIR，回傳已還原的檔名清單。"""
+    """從 ZIP 檔還原所有 .xlsx 檔案到 DATA_DIR，回傳已還原的檔名清單。"""
     import zipfile as _zipfile
     restored: list[str] = []
     with _zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
         for name in zf.namelist():
+            # 只處理 .xlsx，忽略子目錄或其他檔案
+            if not name.endswith(".xlsx"):
+                continue
+            # 取得純檔名（忽略 ZIP 內的路徑）
             basename = name.split("/")[-1].split("\\")[-1]
             if not basename:
                 continue
             file_bytes = zf.read(name)
-            if basename.endswith(".parquet"):
-                # 直接寫入 parquet，不需轉換
-                if _is_cloud():
-                    _r2_write_bytes(basename, file_bytes)
-                    # Clear session state cache for the corresponding xlsx logical name
-                    xlsx_name = basename.rsplit(".", 1)[0] + ".xlsx"
-                    st.session_state.pop(f"_df_cache_{xlsx_name}", None)                    
-                else:
-                    (DATA_DIR / basename).write_bytes(file_bytes)
-                # Return logical xlsx name for consistency
-                restored.append(basename.rsplit(".", 1)[0] + ".xlsx")
-            elif basename.endswith(".xlsx"):
-                save_raw_bytes(basename, file_bytes)
-                restored.append(basename)
+            save_raw_bytes(basename, file_bytes)
+            restored.append(basename)
     _clear_all_caches()
     return restored

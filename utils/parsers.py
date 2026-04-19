@@ -6,7 +6,6 @@
 """
 import io
 import pandas as pd
-from typing import IO, Union
 
 
 # ── 通用檔案讀取（支援多種格式）─────────────────────────────
@@ -24,8 +23,8 @@ def read_file_flexible(file) -> pd.DataFrame:
             except Exception:
                 continue
 
-    # Excel — 依序嘗試各引擎（calamine 最快，優先使用）
-    for engine in ("calamine", "openpyxl", "xlrd"):
+    # Excel — 依序嘗試各引擎
+    for engine in ("openpyxl", "calamine", "xlrd"):
         try:
             return pd.read_excel(io.BytesIO(content), engine=engine)
         except Exception:
@@ -54,8 +53,8 @@ def _find_col(df: pd.DataFrame, patterns: list[str]) -> str | None:
 
 
 # ── 蝦皮 ────────────────────────────────────────────────────
-def parse_shopee(file_or_df: Union[IO[bytes], pd.DataFrame]) -> pd.DataFrame:
-    df = file_or_df if isinstance(file_or_df, pd.DataFrame) else read_file_flexible(file_or_df)
+def parse_shopee(file) -> pd.DataFrame:
+    df = read_file_flexible(file)
 
     # 自動偵測欄位（支援不同年版匯出格式）
     c_oid   = _find_col(df, ["訂單編號", "Order ID", "order_sn"]) or df.columns[0]
@@ -108,8 +107,8 @@ def parse_shopee(file_or_df: Union[IO[bytes], pd.DataFrame]) -> pd.DataFrame:
 
 
 # ── 露天 ────────────────────────────────────────────────────
-def parse_ruten(file_or_df) -> pd.DataFrame:
-    df = file_or_df if isinstance(file_or_df, pd.DataFrame) else read_file_flexible(file_or_df)
+def parse_ruten(file) -> pd.DataFrame:
+    df = read_file_flexible(file)
 
     out = pd.DataFrame()
     out["訂單編號"] = df["訂單編號"].astype(str).str.strip()
@@ -147,8 +146,8 @@ def parse_ruten(file_or_df) -> pd.DataFrame:
 
 
 # ── 官網 EasyStore ──────────────────────────────────────────
-def parse_easystore(file_or_df) -> pd.DataFrame:
-    df = file_or_df if isinstance(file_or_df, pd.DataFrame) else read_file_flexible(file_or_df)
+def parse_easystore(file) -> pd.DataFrame:
+    df = read_file_flexible(file)
 
     # EasyStore 同一訂單多品項時，訂單層欄位只在首列有值 → forward-fill
     order_cols = [
@@ -193,8 +192,8 @@ def parse_easystore(file_or_df) -> pd.DataFrame:
 
 
 # ── MO店 ─────────────────────────────────────────────────────
-def parse_mo(file_or_df) -> pd.DataFrame:
-    df = file_or_df if isinstance(file_or_df, pd.DataFrame) else read_file_flexible(file_or_df)
+def parse_mo(file) -> pd.DataFrame:
+    df = read_file_flexible(file)
 
     out = pd.DataFrame()
     out["訂單編號"] = df["訂單編號"].astype(str).str.strip()
