@@ -6,6 +6,7 @@
 """
 import io
 import pandas as pd
+from typing import IO, Union
 
 
 # ── 通用檔案讀取（支援多種格式）─────────────────────────────
@@ -53,7 +54,7 @@ def _find_col(df: pd.DataFrame, patterns: list[str]) -> str | None:
 
 
 # ── 蝦皮 ────────────────────────────────────────────────────
-def parse_shopee(file_or_df) -> pd.DataFrame:
+def parse_shopee(file_or_df: Union[IO[bytes], pd.DataFrame]) -> pd.DataFrame:
     df = file_or_df if isinstance(file_or_df, pd.DataFrame) else read_file_flexible(file_or_df)
 
     # 自動偵測欄位（支援不同年版匯出格式）
