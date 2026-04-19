@@ -345,6 +345,7 @@ def _render_order_tab():
         "蝦皮": 57,
         "露天": 26,
         "官網": 77,
+        "MO店": 81,
     }
 
     def _check_platform_columns(col_count, selected_platform):
