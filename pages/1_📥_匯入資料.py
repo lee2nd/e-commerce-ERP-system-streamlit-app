@@ -387,7 +387,8 @@ def _render_order_tab():
                 # 寫入平台專屬 xlsx（累積原始資料 + 去重）
                 plat_file = _PLAT_FILE.get(plat_short, plat_short)
                 if plat_file:
-                    append_platform_orders(raw_preview, plat_file)
+                    with st.spinner("儲存中…（大量資料可能需要較長時間）"):
+                        append_platform_orders(raw_preview, plat_file)
 
                 st.session_state["order_upload_success"] = len(new)
                 st.session_state["order_saved_at"] = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")

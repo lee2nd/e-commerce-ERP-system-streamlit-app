@@ -9,11 +9,15 @@ R2_SECRET_ACCESS_KEY = "..."   # Cloudflare R2 API Token Secret Access Key
 
 import os
 import io
+import logging
 import boto3
 import requests
 import pandas as pd
 import streamlit as st
+from botocore.config import Config as BotoConfig
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 # ── 環境判斷 ────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent
@@ -39,33 +43,59 @@ _R2_PUBLIC_BASE = "https://pub-848c9489895e448793d8f949ea5ce84c.r2.dev"
 
 
 def _r2_client():
-    """建立 boto3 S3 client，指向 Cloudflare R2。"""
+    """建立 boto3 S3 client，指向 Cloudflare R2（含超時與自動重試）。"""
     return boto3.client(
         "s3",
         endpoint_url=_R2_ENDPOINT,
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
         region_name="auto",
+        config=BotoConfig(
+            connect_timeout=30,
+            read_timeout=120,
+            retries={"max_attempts": 3, "mode": "adaptive"},
+        ),
     )
 
 
 def _r2_read_bytes(filename: str) -> bytes | None:
     """以公開 HTTP GET 從 R2 讀取檔案，回傳 bytes；404 回傳 None。"""
     url = f"{_R2_PUBLIC_BASE}/{filename}"
-    resp = requests.get(url, timeout=15)
+    resp = requests.get(url, timeout=(10, 120))
     if resp.status_code == 404:
         return None
     resp.raise_for_status()
     return resp.content
 
 
+# 5 MB multipart threshold — 超過時自動分片上傳
+_MULTIPART_THRESHOLD = 5 * 1024 * 1024
+_MULTIPART_CHUNKSIZE = 5 * 1024 * 1024
+
+
 def _r2_write_bytes(filename: str, file_bytes: bytes):
-    """將 bytes 上傳至 R2 bucket。"""
-    _r2_client().put_object(
-        Bucket=_R2_BUCKET,
-        Key=filename,
-        Body=file_bytes,
-    )
+    """將 bytes 上傳至 R2 bucket（大檔自動 multipart upload）。"""
+    client = _r2_client()
+    size = len(file_bytes)
+    if size > _MULTIPART_THRESHOLD:
+        from boto3.s3.transfer import TransferConfig
+        transfer_cfg = TransferConfig(
+            multipart_threshold=_MULTIPART_THRESHOLD,
+            multipart_chunksize=_MULTIPART_CHUNKSIZE,
+        )
+        client.upload_fileobj(
+            Fileobj=io.BytesIO(file_bytes),
+            Bucket=_R2_BUCKET,
+            Key=filename,
+            Config=transfer_cfg,
+        )
+    else:
+        client.put_object(
+            Bucket=_R2_BUCKET,
+            Key=filename,
+            Body=file_bytes,
+        )
+    _log.info("R2 upload OK: %s (%d bytes)", filename, size)
 
 
 def _r2_delete_file(filename: str):
@@ -148,7 +178,16 @@ def _save_excel(df: pd.DataFrame, filename: str):
     if _is_cloud():
         buf = io.BytesIO()
         clean.to_parquet(buf, index=False, engine="pyarrow")
-        _r2_write_bytes(pq_name, buf.getvalue())
+        pq_bytes = buf.getvalue()
+        del buf
+        try:
+            _r2_write_bytes(pq_name, pq_bytes)
+        except Exception as e:
+            _log.error("R2 upload failed for %s: %s", pq_name, e)
+            st.error(f"⚠️ 雲端儲存失敗（{pq_name}）：{e}")
+            raise
+        finally:
+            del pq_bytes
         st.session_state[f"_df_cache_{filename}"] = df.copy()
     else:
         pq_path = DATA_DIR / pq_name
@@ -208,9 +247,10 @@ def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataF
 
     existing = load_platform_orders(platform_name)
     if existing.empty:
-        combined = new_df.copy()
+        combined = new_df
     else:
         combined = pd.concat([existing, new_df], ignore_index=True)
+        del existing
     combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
     _save_excel(combined, f"{platform_name}.xlsx")
     load_platform_orders.clear()
