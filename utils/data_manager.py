@@ -525,7 +525,7 @@ def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = Non
     pq_name = _parquet_name(filename)
     if filename.lower().endswith(".xlsx"):
         try:
-            df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+            df = pd.read_excel(io.BytesIO(file_bytes), engine="calamine")
             clean = _sanitize_for_parquet(df)
             buf = io.BytesIO()
             clean.to_parquet(buf, index=False, engine="pyarrow")
