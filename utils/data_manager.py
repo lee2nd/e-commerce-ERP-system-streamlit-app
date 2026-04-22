@@ -9,6 +9,7 @@ R2_SECRET_ACCESS_KEY = "..."   # Cloudflare R2 API Token Secret Access Key
 
 import os
 import io
+import gc
 import logging
 import boto3
 import requests
@@ -171,9 +172,16 @@ def _save_excel(df: pd.DataFrame, filename: str):
     clean = _sanitize_for_parquet(df)
     if _is_cloud():
         buf = io.BytesIO()
-        clean.to_parquet(buf, index=False, engine="pyarrow")
-        pq_bytes = buf.getvalue()
-        del buf
+        try:
+            clean.to_parquet(buf, index=False, engine="pyarrow")
+            pq_bytes = buf.getvalue()
+        except Exception as e:
+            _log.error("Parquet serialization failed for %s: %s", pq_name, e)
+            st.error(f"⚠️ 資料轉換為 Parquet 時失敗（可能有無法解析的特殊字元或型別）：{e}")
+            raise
+        finally:
+            del clean
+            gc.collect()
         try:
             _r2_write_bytes(pq_name, pq_bytes)
         except Exception as e:
@@ -181,7 +189,9 @@ def _save_excel(df: pd.DataFrame, filename: str):
             st.error(f"⚠️ 雲端儲存失敗（{pq_name}）：{e}")
             raise
         finally:
+            del buf
             del pq_bytes
+            gc.collect()
         st.session_state[f"_df_cache_{filename}"] = df.copy()
     else:
         pq_path = DATA_DIR / pq_name

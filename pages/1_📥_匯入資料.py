@@ -104,9 +104,10 @@ def _render_storage_tab():
     if stg_file:
         try:
             # 讀取上傳的檔案
-            raw_df = read_file_flexible(stg_file)
+            with st.spinner("讀取檔案中... （若檔案較大請稍候）"):
+                raw_df = read_file_flexible(stg_file)
             st.markdown("#### 預覽上傳的資料")
-            st.dataframe(raw_df, width="stretch", hide_index=True)
+            st.dataframe(raw_df.head(100), width="stretch", hide_index=True)
 
             # ── 防呆：同貨號但品名／規格不同 ──────────────────────────
             _dup_rows = []
