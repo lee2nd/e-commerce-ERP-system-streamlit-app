@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 from botocore.config import Config as BotoConfig
 from pathlib import Path
+from boto3.s3.transfer import TransferConfig
 
 _log = logging.getLogger(__name__)
 
@@ -41,21 +42,26 @@ _R2_BUCKET = "lee2nd-erp"
 _R2_ENDPOINT = "https://3adce09e7050ac922cce36b5480d0bc7.r2.cloudflarestorage.com"
 _R2_PUBLIC_BASE = "https://pub-848c9489895e448793d8f949ea5ce84c.r2.dev"
 
+_r2_client_cache = None
+
 
 def _r2_client():
-    """建立 boto3 S3 client，指向 Cloudflare R2（含超時與自動重試）。"""
-    return boto3.client(
-        "s3",
-        endpoint_url=_R2_ENDPOINT,
-        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
-        region_name="auto",
-        config=BotoConfig(
-            connect_timeout=30,
-            read_timeout=120,
-            retries={"max_attempts": 3, "mode": "adaptive"},
-        ),
-    )
+    """建立（或重用）boto3 S3 client，指向 Cloudflare R2。每次呼叫重建 client 會重做 TLS handshake，改為 module 層級快取。"""
+    global _r2_client_cache
+    if _r2_client_cache is None:
+        _r2_client_cache = boto3.client(
+            "s3",
+            endpoint_url=_R2_ENDPOINT,
+            aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+            region_name="auto",
+            config=BotoConfig(
+                connect_timeout=30,
+                read_timeout=120,
+                retries={"max_attempts": 3, "mode": "adaptive"},
+            ),
+        )
+    return _r2_client_cache
 
 
 def _r2_read_bytes(filename: str) -> bytes | None:
@@ -68,33 +74,24 @@ def _r2_read_bytes(filename: str) -> bytes | None:
     return resp.content
 
 
-# 5 MB multipart threshold — 超過時自動分片上傳
-_MULTIPART_THRESHOLD = 5 * 1024 * 1024
-_MULTIPART_CHUNKSIZE = 5 * 1024 * 1024
+# 10 MB multipart threshold — 5MB chunk 對大檔 round trip 過多，改 10MB
+_MULTIPART_THRESHOLD = 10 * 1024 * 1024
+_MULTIPART_CHUNKSIZE = 10 * 1024 * 1024
+_TRANSFER_CFG = TransferConfig(
+    multipart_threshold=_MULTIPART_THRESHOLD,
+    multipart_chunksize=_MULTIPART_CHUNKSIZE,
+)
 
 
 def _r2_write_bytes(filename: str, file_bytes: bytes):
-    """將 bytes 上傳至 R2 bucket（大檔自動 multipart upload）。"""
-    client = _r2_client()
+    """將 bytes 上傳至 R2 bucket；TransferConfig 自動決定是否分片上傳。"""
     size = len(file_bytes)
-    if size > _MULTIPART_THRESHOLD:
-        from boto3.s3.transfer import TransferConfig
-        transfer_cfg = TransferConfig(
-            multipart_threshold=_MULTIPART_THRESHOLD,
-            multipart_chunksize=_MULTIPART_CHUNKSIZE,
-        )
-        client.upload_fileobj(
-            Fileobj=io.BytesIO(file_bytes),
-            Bucket=_R2_BUCKET,
-            Key=filename,
-            Config=transfer_cfg,
-        )
-    else:
-        client.put_object(
-            Bucket=_R2_BUCKET,
-            Key=filename,
-            Body=file_bytes,
-        )
+    _r2_client().upload_fileobj(
+        Fileobj=io.BytesIO(file_bytes),
+        Bucket=_R2_BUCKET,
+        Key=filename,
+        Config=_TRANSFER_CFG,
+    )
     _log.info("R2 upload OK: %s (%d bytes)", filename, size)
 
 
@@ -116,14 +113,14 @@ def _sanitize_for_parquet(df: pd.DataFrame) -> pd.DataFrame:
         return df
     df = df.copy()
     df.columns = [str(c) for c in df.columns]
-    for col in df.columns:
-        if df[col].dtype == object:
-            # 嘗試轉數值；失敗的留字串
-            num = pd.to_numeric(df[col], errors="coerce")
-            if num.notna().sum() == df[col].notna().sum() and num.notna().any():
-                df[col] = num
-            else:
-                df[col] = df[col].astype(str).where(df[col].notna(), None)
+    # select_dtypes 避免遍歷所有欄位；單次 mask 取代兩次 .notna().sum()
+    for col in df.select_dtypes(include=["object"]).columns:
+        mask = df[col].notna()
+        num = pd.to_numeric(df[col], errors="coerce")
+        if mask.any() and (num.notna() == mask).all():
+            df[col] = num
+        else:
+            df[col] = df[col].astype(str).where(mask, None)
     return df
 
 
