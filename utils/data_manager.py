@@ -15,8 +15,10 @@ import requests
 import pandas as pd
 import streamlit as st
 from botocore.config import Config as BotoConfig
+from functools import lru_cache
 from pathlib import Path
 from boto3.s3.transfer import TransferConfig
+import zipfile as _zipfile
 
 _log = logging.getLogger(__name__)
 
@@ -42,26 +44,21 @@ _R2_BUCKET = "lee2nd-erp"
 _R2_ENDPOINT = "https://3adce09e7050ac922cce36b5480d0bc7.r2.cloudflarestorage.com"
 _R2_PUBLIC_BASE = "https://pub-848c9489895e448793d8f949ea5ce84c.r2.dev"
 
-_r2_client_cache = None
-
-
+@lru_cache(maxsize=1)
 def _r2_client():
-    """建立（或重用）boto3 S3 client，指向 Cloudflare R2。每次呼叫重建 client 會重做 TLS handshake，改為 module 層級快取。"""
-    global _r2_client_cache
-    if _r2_client_cache is None:
-        _r2_client_cache = boto3.client(
-            "s3",
-            endpoint_url=_R2_ENDPOINT,
-            aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-            aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
-            region_name="auto",
-            config=BotoConfig(
-                connect_timeout=30,
-                read_timeout=120,
-                retries={"max_attempts": 3, "mode": "adaptive"},
-            ),
-        )
-    return _r2_client_cache
+    """建立（或重用）boto3 S3 client，指向 Cloudflare R2。lru_cache 內建 lock，避免多執行緒競態。"""
+    return boto3.client(
+        "s3",
+        endpoint_url=_R2_ENDPOINT,
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
+        config=BotoConfig(
+            connect_timeout=30,
+            read_timeout=120,
+            retries={"max_attempts": 3, "mode": "adaptive"},
+        ),
+    )
 
 
 def _r2_read_bytes(filename: str) -> bytes | None:
@@ -595,7 +592,6 @@ def delete_all_data():
 
 def restore_from_zip(zip_bytes: bytes) -> list[str]:
     """從 ZIP 檔還原所有 .xlsx / .parquet 檔案到 DATA_DIR，回傳已還原的檔名清單。"""
-    import zipfile as _zipfile
     restored: list[str] = []
     with _zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
         for name in zf.namelist():
