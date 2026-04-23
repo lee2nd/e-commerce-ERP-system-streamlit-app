@@ -6,7 +6,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, timezone, timedelta
 from utils.styles import apply_global_styles
-from utils.data_manager import delete_all_data, restore_from_zip, read_raw_bytes, read_raw_csv_bytes, save_raw_bytes
+from utils.data_manager import delete_all_data, restore_from_zip, read_raw_csv_bytes, save_raw_bytes
 
 apply_global_styles()
 # 每 3 分鐘發送 keep-alive 訊號，防止 Hugging Face Spaces 閒置斷線
@@ -175,29 +175,21 @@ for fname, display_name, note in _FILE_META:
                 if _f != fname:
                     st.session_state.pop(f"_dl_{_f}", None)
             st.session_state.pop("_zip_bytes", None)
-            # 優先讀取上次上傳的實際檔名，找不到再 fallback 到槽位預設名稱
-            _actual_fname = st.session_state.get(f"_actual_{fname}", fname)
             with st.spinner("讀取中…"):
-                raw = read_raw_bytes(_actual_fname)
+                raw = read_raw_csv_bytes(fname)
             if raw:
                 st.session_state[f"_dl_{fname}"] = raw
-                st.session_state[f"_dl_name_{fname}"] = _actual_fname
             else:
                 st.warning("目前無資料")
 
         _dl_data = st.session_state.get(f"_dl_{fname}")
         if _dl_data:
-            _dl_fname = st.session_state.get(f"_dl_name_{fname}", fname)
-            _dl_mime = (
-                "text/csv"
-                if _dl_fname.lower().endswith(".csv")
-                else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            _dl_csv_name = fname.rsplit(".", 1)[0] + ".csv"
             st.download_button(
                 label=f"⬇️ 下載 {display_name}",
                 data=_dl_data,
-                file_name=_dl_fname,
-                mime=_dl_mime,
+                file_name=_dl_csv_name,
+                mime="text/csv",
                 key=f"dl_{fname}",
             )
 
@@ -215,14 +207,11 @@ for fname, display_name, note in _FILE_META:
             if st.button(f"✅ 確認全覆蓋「{display_name}」", key=f"confirm_{fname}", type="primary"):
                 file_bytes = uploaded.read()
                 try:
-                    # 以上傳的原始檔名存檔；cache_key 使用槽位名稱清除對應快取
                     save_raw_bytes(uploaded.name, file_bytes, cache_key=fname)
-                    st.session_state[f"_actual_{fname}"] = uploaded.name
                     ts = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                     st.session_state[f"_ow_ts_{fname}"] = ts
                     # 讓下載快取失效
                     st.session_state.pop(f"_dl_{fname}", None)
-                    st.session_state.pop(f"_dl_name_{fname}", None)
                     st.session_state.pop("_zip_bytes", None)
                     st.session_state[f"_toast_ow_{fname}"] = f"✅ 「{display_name}」已全覆蓋上傳（{uploaded.name}）！（{ts}）"
                     st.rerun()

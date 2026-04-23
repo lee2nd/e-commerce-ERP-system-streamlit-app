@@ -555,6 +555,13 @@ def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = Non
         # CSV 直接轉存至對應的 csv_name
         if _is_cloud():
             _r2_write_bytes(csv_name, file_bytes)
+            try:
+                df = pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8-sig", low_memory=False)
+                # cache_key 是槽位邏輯名稱 (xxx.xlsx)，以此作為 session state key
+                logical_name = (cache_key or filename).rsplit(".", 1)[0] + ".xlsx"
+                st.session_state[f"_df_cache_{logical_name}"] = df
+            except Exception:
+                pass
         else:
             (DATA_DIR / csv_name).write_bytes(file_bytes)
     else:
@@ -639,8 +646,8 @@ def restore_from_zip(zip_bytes: bytes) -> list[str]:
                     else:
                         (DATA_DIR / csv_name).write_bytes(csv_bytes)
                     restored.append(basename.rsplit(".", 1)[0] + ".xlsx")
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.warning("Failed to convert parquet file %s: %s", basename, e)
             elif basename.endswith(".xlsx"):
                 save_raw_bytes(basename, file_bytes)
                 restored.append(basename)
