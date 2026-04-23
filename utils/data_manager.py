@@ -118,11 +118,10 @@ def _load_excel(filename: str) -> pd.DataFrame:
             return st.session_state.pop(cache_key)
         try:
             raw = _r2_read_bytes(csv_name)
-            if raw is None:
+            if not raw:
                 return pd.DataFrame()
             return pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", low_memory=False)
-        except Exception as e:
-            st.warning(f"Failed to load {filename}: {e}")
+        except Exception:
             return pd.DataFrame()
     else:
         csv_path = DATA_DIR / csv_name
@@ -211,7 +210,7 @@ def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataF
         del existing
         combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
     _save_excel(combined, f"{platform_name}.xlsx")
-    load_platform_orders.clear()
+    load_platform_orders.clear()  # type: ignore[attr-defined]
     return combined
 
 
@@ -226,7 +225,7 @@ def load_compare_table() -> pd.DataFrame:
 
 def save_compare_table(df: pd.DataFrame):
     _save_excel(df, "對照表.xlsx")
-    load_compare_table.clear()
+    load_compare_table.clear()  # type: ignore[attr-defined]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -240,7 +239,7 @@ def load_daily_report() -> pd.DataFrame:
 
 def save_daily_report(df: pd.DataFrame):
     _save_excel(df, "日報表.xlsx")
-    load_daily_report.clear()
+    load_daily_report.clear()  # type: ignore[attr-defined]
 
 
 def clear_daily_report():
@@ -254,7 +253,7 @@ def clear_daily_report():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "日報表.xlsx")
-    load_daily_report.clear()
+    load_daily_report.clear()  # type: ignore[attr-defined]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -268,7 +267,7 @@ def load_monthly_report() -> pd.DataFrame:
 
 def save_monthly_report(df: pd.DataFrame):
     _save_excel(df, "月報表.xlsx")
-    load_monthly_report.clear()
+    load_monthly_report.clear()  # type: ignore[attr-defined]
 
 
 def clear_monthly_report():
@@ -276,7 +275,7 @@ def clear_monthly_report():
     existing = _load_excel("月報表.xlsx")
     cols = list(existing.columns) if not existing.empty else ["年份", "月份"]
     _save_excel(pd.DataFrame(columns=cols), "月報表.xlsx")
-    load_monthly_report.clear()
+    load_monthly_report.clear()  # type: ignore[attr-defined]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -290,7 +289,7 @@ def load_delivery() -> pd.DataFrame:
 
 def save_delivery(df: pd.DataFrame):
     _save_excel(df, "出庫.xlsx")
-    load_delivery.clear()
+    load_delivery.clear()  # type: ignore[attr-defined]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -304,7 +303,7 @@ def load_inventory_details() -> pd.DataFrame:
 
 def save_inventory_details(df: pd.DataFrame):
     _save_excel(df, "庫存明細.xlsx")
-    load_inventory_details.clear()
+    load_inventory_details.clear()  # type: ignore[attr-defined]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -318,7 +317,7 @@ def clear_storage():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "入庫.xlsx")
-    load_storage.clear()
+    load_storage.clear()  # type: ignore[attr-defined]
 
 
 def clear_platform_orders(platform_name: str):
@@ -327,7 +326,7 @@ def clear_platform_orders(platform_name: str):
     existing = _load_excel(fname)
     cols = list(existing.columns) if not existing.empty else []
     _save_excel(pd.DataFrame(columns=cols), fname)
-    load_platform_orders.clear()
+    load_platform_orders.clear()  # type: ignore[attr-defined]
 
 
 def clear_compare_table():
@@ -337,7 +336,7 @@ def clear_compare_table():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "對照表.xlsx")
-    load_compare_table.clear()
+    load_compare_table.clear()  # type: ignore[attr-defined]
 
 
 def clear_delivery():
@@ -347,7 +346,7 @@ def clear_delivery():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "出庫.xlsx")
-    load_delivery.clear()
+    load_delivery.clear()  # type: ignore[attr-defined]
 
 
 def clear_inventory_details():
@@ -358,7 +357,7 @@ def clear_inventory_details():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "庫存明細.xlsx")
-    load_inventory_details.clear()
+    load_inventory_details.clear()  # type: ignore[attr-defined]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -372,7 +371,7 @@ def load_combo_sku() -> pd.DataFrame:
 
 def save_combo_sku(df: pd.DataFrame):
     _save_excel(df, "組合貨號.xlsx")
-    load_combo_sku.clear()
+    load_combo_sku.clear()  # type: ignore[attr-defined]
 
 
 def clear_combo_sku():
@@ -382,7 +381,7 @@ def clear_combo_sku():
     if not existing.empty:
         cols = list(existing.columns)
     _save_excel(pd.DataFrame(columns=cols), "組合貨號.xlsx")
-    load_combo_sku.clear()
+    load_combo_sku.clear()  # type: ignore[attr-defined]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -411,7 +410,7 @@ def save_custom_orders(df: pd.DataFrame):
         out["日期"] = pd.to_datetime(out["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
         out["日期"] = out["日期"].fillna("")
     _save_excel(out, "自建訂單.xlsx")
-    load_custom_orders.clear()
+    load_custom_orders.clear()  # type: ignore[attr-defined]
 
 
 def clear_custom_orders():
@@ -419,7 +418,7 @@ def clear_custom_orders():
     existing = _load_excel("自建訂單.xlsx")
     cols = list(existing.columns) if not existing.empty else _CUSTOM_ORDER_COLS
     _save_excel(pd.DataFrame(columns=cols), "自建訂單.xlsx")
-    load_custom_orders.clear()
+    load_custom_orders.clear()  # type: ignore[attr-defined]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -454,7 +453,7 @@ def _clear_file_cache(filename: str):
     }
     fn = _MAP.get(base)
     if fn:
-        fn.clear()
+        fn.clear()  # type: ignore[attr-defined]
 
 
 def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = None):
@@ -486,15 +485,15 @@ def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = Non
 
 def _clear_all_caches():
     """清除所有 st.cache_data 快取。"""
-    load_storage.clear()
-    load_delivery.clear()
-    load_compare_table.clear()
-    load_inventory_details.clear()
-    load_monthly_report.clear()
-    load_daily_report.clear()
-    load_combo_sku.clear()
-    load_platform_orders.clear()
-    load_custom_orders.clear()
+    load_storage.clear()  # type: ignore[attr-defined]
+    load_delivery.clear()  # type: ignore[attr-defined]
+    load_compare_table.clear()  # type: ignore[attr-defined]
+    load_inventory_details.clear()  # type: ignore[attr-defined]
+    load_monthly_report.clear()  # type: ignore[attr-defined]
+    load_daily_report.clear()  # type: ignore[attr-defined]
+    load_combo_sku.clear()  # type: ignore[attr-defined]
+    load_platform_orders.clear()  # type: ignore[attr-defined]
+    load_custom_orders.clear()  # type: ignore[attr-defined]
 
 
 def delete_all_data():
