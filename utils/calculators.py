@@ -92,8 +92,7 @@ def auto_match_compare_table(
             subset=["平台商品名稱", "平台"]
         ).reset_index(drop=True)
 
-        # 已匹配的列保留原貨號，不重新掃描；只對「未匹配」的列嘗試重新匹配
-        _matched_mask = ~existing_compare_df["入庫品名"].astype(str).isin(["", "未匹配"])
+        _matched_mask = ~existing_compare_df["入庫品名"].fillna("").astype(str).isin(["", "未匹配"])
         existing_matched = existing_compare_df[_matched_mask][result_cols].copy()
         existing_unmatched = _enrich(
             existing_compare_df[~_matched_mask][["平台商品名稱", "平台"]].copy()
