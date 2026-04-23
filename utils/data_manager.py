@@ -510,23 +510,23 @@ def read_raw_csv_bytes(filename: str) -> bytes | None:
 
 def _clear_file_cache(filename: str):
     """清除指定檔案對應的 st.cache_data 快取。"""
-    if filename == "入庫.xlsx":
+    if filename == "入庫.csv":
         load_storage.clear()
-    elif filename == "出庫.xlsx":
+    elif filename == "出庫.csv":
         load_delivery.clear()
-    elif filename == "對照表.xlsx":
+    elif filename == "對照表.csv":
         load_compare_table.clear()
-    elif filename == "庫存明細.xlsx":
+    elif filename == "庫存明細.csv":
         load_inventory_details.clear()
-    elif filename == "月報表.xlsx":
+    elif filename == "月報表.csv":
         load_monthly_report.clear()
-    elif filename == "日報表.xlsx":
+    elif filename == "日報表.csv":
         load_daily_report.clear()
-    elif filename == "組合貨號.xlsx":
+    elif filename == "組合貨號.csv":
         load_combo_sku.clear()
-    elif filename in ("蝦皮.xlsx", "露天.xlsx", "官網.xlsx", "MO店.xlsx"):
+    elif filename in ("蝦皮.csv", "露天.csv", "官網.csv", "MO店.csv"):
         load_platform_orders.clear()
-    elif filename == "自建訂單.xlsx":
+    elif filename == "自建訂單.csv":
         load_custom_orders.clear()
 
 
@@ -589,9 +589,9 @@ def _clear_all_caches():
 def delete_all_data():
     """刪除 DATA_DIR 下所有資料檔（CSV）。"""
     files = [f for f, *_ in [
-        ("入庫.xlsx",), ("出庫.xlsx",), ("對照表.xlsx",), ("庫存明細.xlsx",),
-        ("日報表.xlsx",), ("月報表.xlsx",), ("組合貨號.xlsx",),
-        ("蝦皮.xlsx",), ("露天.xlsx",), ("官網.xlsx",), ("MO店.xlsx",), ("自建訂單.xlsx",),
+        ("入庫.csv",), ("出庫.csv",), ("對照表.csv",), ("庫存明細.csv",),
+        ("日報表.csv",), ("月報表.csv",), ("組合貨號.csv",),
+        ("蝦皮.csv",), ("露天.csv",), ("官網.csv",), ("MO店.csv",), ("自建訂單.csv",),
     ]]
     deleted = []
     if _is_cloud():
@@ -630,7 +630,7 @@ def restore_from_zip(zip_bytes: bytes) -> list[str]:
                     st.session_state.pop(f"_df_cache_{xlsx_name}", None)
                 else:
                     (DATA_DIR / basename).write_bytes(file_bytes)
-                restored.append(basename.rsplit(".", 1)[0] + ".xlsx")
+                restored.append(basename.rsplit(".", 1)[0] + ".csv")
             elif basename.endswith(".parquet"):
                 # 向後相容：還原舊版 parquet 備份，轉換為 CSV
                 try:
@@ -645,11 +645,11 @@ def restore_from_zip(zip_bytes: bytes) -> list[str]:
                         st.session_state.pop(f"_df_cache_{xlsx_name}", None)
                     else:
                         (DATA_DIR / csv_name).write_bytes(csv_bytes)
-                    restored.append(basename.rsplit(".", 1)[0] + ".xlsx")
+                    restored.append(basename.rsplit(".", 1)[0] + ".csv")
                 except Exception as e:
                     _log.warning("Failed to convert parquet file %s: %s", basename, e)
             elif basename.endswith(".xlsx"):
                 save_raw_bytes(basename, file_bytes)
-                restored.append(basename)
+                restored.append(basename.rsplit(".", 1)[0] + ".csv")
     _clear_all_caches()
     return restored

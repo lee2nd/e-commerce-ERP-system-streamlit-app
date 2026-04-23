@@ -165,7 +165,7 @@ st.markdown("#### 📂 逐一備份 & 全覆蓋上傳")
 st.warning("⚠️ 全覆蓋上傳會**直接取代**現有資料，請務必先備份再操作。")
 
 for fname, display_name, note in _FILE_META:
-    with st.expander(f"📄 {display_name}（{fname}）"):
+    with st.expander(f"📄 {display_name}"):
         st.caption(note)
 
         # ── 下載該檔案 ────────────────────────────────────────
