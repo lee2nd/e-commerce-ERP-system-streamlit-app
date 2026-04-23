@@ -9,7 +9,6 @@ R2_SECRET_ACCESS_KEY = "..."   # Cloudflare R2 API Token Secret Access Key
 
 import os
 import io
-import gc
 import logging
 import boto3
 import requests
@@ -105,38 +104,8 @@ def _csv_name(xlsx_name: str) -> str:
     return xlsx_name.rsplit(".", 1)[0] + ".csv"
 
 
-def _sanitize_for_csv(df: pd.DataFrame) -> pd.DataFrame:
-    """寫入前做型態清理，確保 CSV 格式相容。"""
-    if df.empty:
-        return df
-    df = df.copy()
-    df.columns = [str(c) for c in df.columns]
-    # select_dtypes 避免遍歷所有欄位；單次 mask 取代兩次 .notna().sum()
-    for col in df.select_dtypes(include=["object"]).columns:
-        mask = df[col].notna()
-        num = pd.to_numeric(df[col], errors="coerce")
-        if mask.any() and (num.notna() == mask).all():
-            df[col] = num
-        else:
-            df[col] = df[col].astype(str).where(mask, None)
-    return df
-
-
-# ── dtype 優化 ──────────────────────────────────────────────
-
-def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
-    """壓縮 DataFrame 記憶體用量：數值 downcast。"""
-    if df.empty:
-        return df
-    for col in df.select_dtypes(include=["int64"]).columns:
-        df[col] = pd.to_numeric(df[col], downcast="integer")
-    for col in df.select_dtypes(include=["float64"]).columns:
-        df[col] = pd.to_numeric(df[col], downcast="float")
-    return df
-
-
 # ══════════════════════════════════════════════════════════════
-# 資料讀寫（內部 Parquet，對外邏輯名仍為 .xlsx）
+# 資料讀寫（內部 CSV，對外邏輯名仍為 .xlsx）
 # ══════════════════════════════════════════════════════════════
 
 def _load_excel(filename: str) -> pd.DataFrame:
@@ -151,7 +120,7 @@ def _load_excel(filename: str) -> pd.DataFrame:
             raw = _r2_read_bytes(csv_name)
             if raw is None:
                 return pd.DataFrame()
-            return _optimize_dtypes(pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", low_memory=False))
+            return pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", low_memory=False)
         except Exception as e:
             st.warning(f"Failed to load {filename}: {e}")
             return pd.DataFrame()
@@ -159,7 +128,7 @@ def _load_excel(filename: str) -> pd.DataFrame:
         csv_path = DATA_DIR / csv_name
         if csv_path.exists() and csv_path.stat().st_size > 0:
             try:
-                return _optimize_dtypes(pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False))
+                return pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
             except Exception as e:
                 st.warning(f"Failed to load {filename}: {e}")
                 return pd.DataFrame()
@@ -169,19 +138,16 @@ def _load_excel(filename: str) -> pd.DataFrame:
 def _save_excel(df: pd.DataFrame, filename: str):
     """寫入資料：以 CSV 格式儲存。"""
     csv_name = _csv_name(filename)
-    clean = _sanitize_for_csv(df)
     if _is_cloud():
-        buf = io.BytesIO()
         try:
-            clean.to_csv(buf, index=False, encoding="utf-8-sig")
+            buf = io.BytesIO()
+            df.to_csv(buf, index=False, encoding="utf-8-sig")
             csv_bytes = buf.getvalue()
+            del buf
         except Exception as e:
             _log.error("CSV serialization failed for %s: %s", csv_name, e)
-            st.error(f"⚠️ 資料轉換為 CSV 時失敗（可能有無法解析的特殊字元或型別）：{e}")
+            st.error(f"⚠️ 資料轉換為 CSV 時失敗：{e}")
             raise
-        finally:
-            del clean
-            gc.collect()
         try:
             _r2_write_bytes(csv_name, csv_bytes)
         except Exception as e:
@@ -189,13 +155,11 @@ def _save_excel(df: pd.DataFrame, filename: str):
             st.error(f"⚠️ 雲端儲存失敗（{csv_name}）：{e}")
             raise
         finally:
-            del buf
             del csv_bytes
-            gc.collect()
         st.session_state[f"_df_cache_{filename}"] = df.copy()
     else:
         csv_path = DATA_DIR / csv_name
-        clean.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -239,23 +203,13 @@ def load_platform_orders(platform_name: str) -> pd.DataFrame:
 
 
 def append_platform_orders(new_df: pd.DataFrame, platform_name: str) -> pd.DataFrame:
-    # ── 檔案內部去重：同列完全相同時，數量欄 sum 合併 ──
-    _qty_col = next((c for c in new_df.columns if c in ("數量", "Quantity")), None)
-    if _qty_col and not new_df.empty:
-        group_cols = [c for c in new_df.columns if c != _qty_col]
-        new_df = (
-            new_df.groupby(group_cols, dropna=False, sort=False)
-            .agg({_qty_col: "sum"})
-            .reset_index()[new_df.columns.tolist()]
-        )
-
     existing = load_platform_orders(platform_name)
     if existing.empty:
-        combined = new_df
+        combined = new_df.drop_duplicates(keep="last").reset_index(drop=True)
     else:
         combined = pd.concat([existing, new_df], ignore_index=True)
         del existing
-    combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
+        combined = combined.drop_duplicates(keep="last").reset_index(drop=True)
     _save_excel(combined, f"{platform_name}.xlsx")
     load_platform_orders.clear()
     return combined
@@ -472,27 +426,6 @@ def clear_custom_orders():
 # 原始 bytes 讀寫（備份 / 全覆蓋還原用）
 # ══════════════════════════════════════════════════════════════
 
-def read_raw_bytes(filename: str) -> bytes | None:
-    """讀取指定檔案，對外回傳 xlsx bytes 以供備份 / 下載。"""
-    csv_name = _csv_name(filename)
-    try:
-        if _is_cloud():
-            raw = _r2_read_bytes(csv_name)
-            if raw is None:
-                return None
-            df = pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", low_memory=False)
-        else:
-            csv_path = DATA_DIR / csv_name
-            if not csv_path.exists() or csv_path.stat().st_size == 0:
-                return None
-            df = pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
-        buf = io.BytesIO()
-        df.to_excel(buf, index=False, engine="openpyxl")
-        return buf.getvalue()
-    except Exception:
-        return None
-
-
 def read_raw_csv_bytes(filename: str) -> bytes | None:
     """讀取指定檔案，直接回傳 CSV 原始 bytes（不轉 Excel，速度快）。"""
     csv_name = _csv_name(filename)
@@ -509,67 +442,45 @@ def read_raw_csv_bytes(filename: str) -> bytes | None:
 
 
 def _clear_file_cache(filename: str):
-    """清除指定檔案對應的 st.cache_data 快取。"""
-    if filename == "入庫.csv":
-        load_storage.clear()
-    elif filename == "出庫.csv":
-        load_delivery.clear()
-    elif filename == "對照表.csv":
-        load_compare_table.clear()
-    elif filename == "庫存明細.csv":
-        load_inventory_details.clear()
-    elif filename == "月報表.csv":
-        load_monthly_report.clear()
-    elif filename == "日報表.csv":
-        load_daily_report.clear()
-    elif filename == "組合貨號.csv":
-        load_combo_sku.clear()
-    elif filename in ("蝦皮.csv", "露天.csv", "官網.csv", "MO店.csv"):
-        load_platform_orders.clear()
-    elif filename == "自建訂單.csv":
-        load_custom_orders.clear()
+    """清除指定檔案對應的 st.cache_data 快取（接受任意副檔名）。"""
+    base = filename.rsplit(".", 1)[0]
+    _MAP = {
+        "入庫": load_storage, "出庫": load_delivery, "對照表": load_compare_table,
+        "庫存明細": load_inventory_details, "月報表": load_monthly_report,
+        "日報表": load_daily_report, "組合貨號": load_combo_sku,
+        "蝦皮": load_platform_orders, "露天": load_platform_orders,
+        "官網": load_platform_orders, "MO店": load_platform_orders,
+        "自建訂單": load_custom_orders,
+    }
+    fn = _MAP.get(base)
+    if fn:
+        fn.clear()
 
 
 def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = None):
-    """以原始 bytes 全覆蓋指定檔案（接收 xlsx/csv bytes → 轉存 CSV），並清除相關快取。"""
-    csv_name = _csv_name(filename)
-    if filename.lower().endswith(".xlsx"):
+    """以原始 bytes 全覆蓋指定槽位（接收 xlsx/xls/csv → 統一轉存為 CSV），並清除相關快取。"""
+    ext = filename.rsplit(".", 1)[-1].lower()
+    csv_name = _csv_name(cache_key or filename)
+    if ext in ("xlsx", "xls"):
         try:
             df = pd.read_excel(io.BytesIO(file_bytes), engine="calamine")
-            clean = _sanitize_for_csv(df)
             buf = io.BytesIO()
-            clean.to_csv(buf, index=False, encoding="utf-8-sig")
-            csv_bytes = buf.getvalue()
-            if _is_cloud():
-                _r2_write_bytes(csv_name, csv_bytes)
-                st.session_state[f"_df_cache_{filename}"] = df.copy()
-            else:
-                (DATA_DIR / csv_name).write_bytes(csv_bytes)
+            df.to_csv(buf, index=False, encoding="utf-8-sig")
+            data = buf.getvalue()
+            del buf, df
         except Exception:
-            # 無法解析為 DataFrame，直接存原始 bytes
-            if _is_cloud():
-                _r2_write_bytes(filename, file_bytes)
-            else:
-                (DATA_DIR / filename).write_bytes(file_bytes)
-    elif filename.lower().endswith(".csv"):
-        # CSV 直接轉存至對應的 csv_name
+            data = file_bytes
+            csv_name = filename
+        if _is_cloud():
+            _r2_write_bytes(csv_name, data)
+        else:
+            (DATA_DIR / csv_name).write_bytes(data)
+    else:
+        # csv 或其他格式：直接寫入
         if _is_cloud():
             _r2_write_bytes(csv_name, file_bytes)
-            try:
-                df = pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8-sig", low_memory=False)
-                # cache_key 是槽位邏輯名稱 (xxx.xlsx)，以此作為 session state key
-                logical_name = (cache_key or filename).rsplit(".", 1)[0] + ".xlsx"
-                st.session_state[f"_df_cache_{logical_name}"] = df
-            except Exception:
-                pass
         else:
             (DATA_DIR / csv_name).write_bytes(file_bytes)
-    else:
-        # 其他格式，直接存原始 bytes
-        if _is_cloud():
-            _r2_write_bytes(filename, file_bytes)
-        else:
-            (DATA_DIR / filename).write_bytes(file_bytes)
     _clear_file_cache(cache_key or filename)
 
 
@@ -588,28 +499,25 @@ def _clear_all_caches():
 
 def delete_all_data():
     """刪除 DATA_DIR 下所有資料檔（CSV）。"""
-    files = [f for f, *_ in [
-        ("入庫.csv",), ("出庫.csv",), ("對照表.csv",), ("庫存明細.csv",),
-        ("日報表.csv",), ("月報表.csv",), ("組合貨號.csv",),
-        ("蝦皮.csv",), ("露天.csv",), ("官網.csv",), ("MO店.csv",), ("自建訂單.csv",),
-    ]]
+    _BASES = ["入庫", "出庫", "對照表", "庫存明細", "日報表", "月報表",
+              "組合貨號", "蝦皮", "露天", "官網", "MO店", "自建訂單"]
     deleted = []
     if _is_cloud():
-        for fname in files:
+        for base in _BASES:
             try:
-                _r2_delete_file(_csv_name(fname))
+                _r2_delete_file(f"{base}.csv")
             except Exception:
                 pass
-            deleted.append(fname)
+            deleted.append(f"{base}.csv")
     else:
-        for fname in files:
-            path = DATA_DIR / _csv_name(fname)
+        for base in _BASES:
+            path = DATA_DIR / f"{base}.csv"
             if path.exists():
                 path.unlink()
-            deleted.append(fname)
+            deleted.append(f"{base}.csv")
     _clear_all_caches()
-    for fname in files:
-        st.session_state.pop(f"_df_cache_{fname}", None)
+    for base in _BASES:
+        st.session_state.pop(f"_df_cache_{base}.xlsx", None)
     return deleted
 
 

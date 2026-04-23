@@ -465,9 +465,7 @@ def _render_custom_tab():
         _cust_total = len(custom_orders)
         _cust_total_pages = max(1, (_cust_total - 1) // _cust_page_size + 1)
         _cust_dl_col, _cust_pg_col = st.columns([1, 3])
-        _cust_xlsx_buf = __import__("io").BytesIO()
-        custom_orders.to_excel(_cust_xlsx_buf, index=False, engine="openpyxl")
-        _cust_dl_col.download_button("⬇️ 下載自建訂單", data=_cust_xlsx_buf.getvalue(), file_name="自建訂單.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_custom_list")
+        _cust_dl_col.download_button("⬇️ 下載自建訂單", data=_df_to_csv_bytes(custom_orders), file_name="自建訂單.csv", mime="text/csv", key="dl_custom_list")
         if _cust_total_pages > 1:
             _cust_page = _cust_pg_col.selectbox(
                 "頁碼", list(range(1, _cust_total_pages + 1)),
