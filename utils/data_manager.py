@@ -1,5 +1,5 @@
 """
-資料持久化層 — 內部以 Parquet 格式儲存，對外介面維持 .xlsx 邏輯名稱不變。
+資料持久化層 — 內部以 CSV 格式儲存，對外介面維持 .xlsx 邏輯名稱不變。
 支援本地開發（直接讀寫檔案）與 Hugging Face Spaces（透過 R2 S3-compatible API）。
 
 Hugging Face Spaces 環境變數需設定：
@@ -98,15 +98,15 @@ def _r2_delete_file(filename: str):
     _r2_client().delete_object(Bucket=_R2_BUCKET, Key=filename)
 
 
-# ── Parquet 內部格式工具 ─────────────────────────────────────
+# ── CSV 內部格式工具 ─────────────────────────────────────────
 
-def _parquet_name(xlsx_name: str) -> str:
-    """將邏輯檔名 (xxx.xlsx) 轉為內部 parquet 檔名。"""
-    return xlsx_name.rsplit(".", 1)[0] + ".parquet"
+def _csv_name(xlsx_name: str) -> str:
+    """將邏輯檔名 (xxx.xlsx) 轉為內部 CSV 檔名。"""
+    return xlsx_name.rsplit(".", 1)[0] + ".csv"
 
 
-def _sanitize_for_parquet(df: pd.DataFrame) -> pd.DataFrame:
-    """Parquet 比 xlsx 嚴格，寫入前做型態清理。"""
+def _sanitize_for_csv(df: pd.DataFrame) -> pd.DataFrame:
+    """寫入前做型態清理，確保 CSV 格式相容。"""
     if df.empty:
         return df
     df = df.copy()
@@ -140,26 +140,26 @@ def _optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════
 
 def _load_excel(filename: str) -> pd.DataFrame:
-    """讀取資料（內部 Parquet 格式）。"""
-    pq_name = _parquet_name(filename)
+    """讀取資料（內部 CSV 格式）。"""
+    csv_name = _csv_name(filename)
 
     if _is_cloud():
         cache_key = f"_df_cache_{filename}"
         if cache_key in st.session_state:
             return st.session_state.pop(cache_key)
         try:
-            raw = _r2_read_bytes(pq_name)
+            raw = _r2_read_bytes(csv_name)
             if raw is None:
                 return pd.DataFrame()
-            return _optimize_dtypes(pd.read_parquet(io.BytesIO(raw)))
+            return _optimize_dtypes(pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", low_memory=False))
         except Exception as e:
             st.warning(f"Failed to load {filename}: {e}")
             return pd.DataFrame()
     else:
-        pq_path = DATA_DIR / pq_name
-        if pq_path.exists() and pq_path.stat().st_size > 0:
+        csv_path = DATA_DIR / csv_name
+        if csv_path.exists() and csv_path.stat().st_size > 0:
             try:
-                return _optimize_dtypes(pd.read_parquet(pq_path))
+                return _optimize_dtypes(pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False))
             except Exception as e:
                 st.warning(f"Failed to load {filename}: {e}")
                 return pd.DataFrame()
@@ -167,35 +167,35 @@ def _load_excel(filename: str) -> pd.DataFrame:
 
 
 def _save_excel(df: pd.DataFrame, filename: str):
-    """寫入資料：以 Parquet 格式儲存。"""
-    pq_name = _parquet_name(filename)
-    clean = _sanitize_for_parquet(df)
+    """寫入資料：以 CSV 格式儲存。"""
+    csv_name = _csv_name(filename)
+    clean = _sanitize_for_csv(df)
     if _is_cloud():
         buf = io.BytesIO()
         try:
-            clean.to_parquet(buf, index=False, engine="pyarrow")
-            pq_bytes = buf.getvalue()
+            clean.to_csv(buf, index=False, encoding="utf-8-sig")
+            csv_bytes = buf.getvalue()
         except Exception as e:
-            _log.error("Parquet serialization failed for %s: %s", pq_name, e)
-            st.error(f"⚠️ 資料轉換為 Parquet 時失敗（可能有無法解析的特殊字元或型別）：{e}")
+            _log.error("CSV serialization failed for %s: %s", csv_name, e)
+            st.error(f"⚠️ 資料轉換為 CSV 時失敗（可能有無法解析的特殊字元或型別）：{e}")
             raise
         finally:
             del clean
             gc.collect()
         try:
-            _r2_write_bytes(pq_name, pq_bytes)
+            _r2_write_bytes(csv_name, csv_bytes)
         except Exception as e:
-            _log.error("R2 upload failed for %s: %s", pq_name, e)
-            st.error(f"⚠️ 雲端儲存失敗（{pq_name}）：{e}")
+            _log.error("R2 upload failed for %s: %s", csv_name, e)
+            st.error(f"⚠️ 雲端儲存失敗（{csv_name}）：{e}")
             raise
         finally:
             del buf
-            del pq_bytes
+            del csv_bytes
             gc.collect()
         st.session_state[f"_df_cache_{filename}"] = df.copy()
     else:
-        pq_path = DATA_DIR / pq_name
-        clean.to_parquet(pq_path, index=False, engine="pyarrow")
+        csv_path = DATA_DIR / csv_name
+        clean.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -474,18 +474,18 @@ def clear_custom_orders():
 
 def read_raw_bytes(filename: str) -> bytes | None:
     """讀取指定檔案，對外回傳 xlsx bytes 以供備份 / 下載。"""
-    pq_name = _parquet_name(filename)
+    csv_name = _csv_name(filename)
     try:
         if _is_cloud():
-            raw = _r2_read_bytes(pq_name)
+            raw = _r2_read_bytes(csv_name)
             if raw is None:
                 return None
-            df = pd.read_parquet(io.BytesIO(raw))
+            df = pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig", low_memory=False)
         else:
-            pq_path = DATA_DIR / pq_name
-            if not pq_path.exists() or pq_path.stat().st_size == 0:
+            csv_path = DATA_DIR / csv_name
+            if not csv_path.exists() or csv_path.stat().st_size == 0:
                 return None
-            df = pd.read_parquet(pq_path)
+            df = pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
         buf = io.BytesIO()
         df.to_excel(buf, index=False, engine="openpyxl")
         return buf.getvalue()
@@ -493,17 +493,17 @@ def read_raw_bytes(filename: str) -> bytes | None:
         return None
 
 
-def read_raw_parquet_bytes(filename: str) -> bytes | None:
-    """讀取指定檔案，直接回傳 parquet 原始 bytes（不轉 Excel，速度快）。"""
-    pq_name = _parquet_name(filename)
+def read_raw_csv_bytes(filename: str) -> bytes | None:
+    """讀取指定檔案，直接回傳 CSV 原始 bytes（不轉 Excel，速度快）。"""
+    csv_name = _csv_name(filename)
     try:
         if _is_cloud():
-            return _r2_read_bytes(pq_name)
+            return _r2_read_bytes(csv_name)
         else:
-            pq_path = DATA_DIR / pq_name
-            if not pq_path.exists() or pq_path.stat().st_size == 0:
+            csv_path = DATA_DIR / csv_name
+            if not csv_path.exists() or csv_path.stat().st_size == 0:
                 return None
-            return pq_path.read_bytes()
+            return csv_path.read_bytes()
     except Exception:
         return None
 
@@ -531,28 +531,34 @@ def _clear_file_cache(filename: str):
 
 
 def save_raw_bytes(filename: str, file_bytes: bytes, cache_key: str | None = None):
-    """以原始 bytes 全覆蓋指定檔案（接收 xlsx bytes → 轉存 parquet），並清除相關快取。"""
-    pq_name = _parquet_name(filename)
+    """以原始 bytes 全覆蓋指定檔案（接收 xlsx/csv bytes → 轉存 CSV），並清除相關快取。"""
+    csv_name = _csv_name(filename)
     if filename.lower().endswith(".xlsx"):
         try:
             df = pd.read_excel(io.BytesIO(file_bytes), engine="calamine")
-            clean = _sanitize_for_parquet(df)
+            clean = _sanitize_for_csv(df)
             buf = io.BytesIO()
-            clean.to_parquet(buf, index=False, engine="pyarrow")
-            pq_bytes = buf.getvalue()
+            clean.to_csv(buf, index=False, encoding="utf-8-sig")
+            csv_bytes = buf.getvalue()
             if _is_cloud():
-                _r2_write_bytes(pq_name, pq_bytes)
+                _r2_write_bytes(csv_name, csv_bytes)
                 st.session_state[f"_df_cache_{filename}"] = df.copy()
             else:
-                (DATA_DIR / pq_name).write_bytes(pq_bytes)
+                (DATA_DIR / csv_name).write_bytes(csv_bytes)
         except Exception:
             # 無法解析為 DataFrame，直接存原始 bytes
             if _is_cloud():
                 _r2_write_bytes(filename, file_bytes)
             else:
                 (DATA_DIR / filename).write_bytes(file_bytes)
+    elif filename.lower().endswith(".csv"):
+        # CSV 直接轉存至對應的 csv_name
+        if _is_cloud():
+            _r2_write_bytes(csv_name, file_bytes)
+        else:
+            (DATA_DIR / csv_name).write_bytes(file_bytes)
     else:
-        # 非 xlsx（如 csv），直接存原始 bytes
+        # 其他格式，直接存原始 bytes
         if _is_cloud():
             _r2_write_bytes(filename, file_bytes)
         else:
@@ -574,7 +580,7 @@ def _clear_all_caches():
 
 
 def delete_all_data():
-    """刪除 DATA_DIR 下所有資料檔（parquet）。"""
+    """刪除 DATA_DIR 下所有資料檔（CSV）。"""
     files = [f for f, *_ in [
         ("入庫.xlsx",), ("出庫.xlsx",), ("對照表.xlsx",), ("庫存明細.xlsx",),
         ("日報表.xlsx",), ("月報表.xlsx",), ("組合貨號.xlsx",),
@@ -584,13 +590,13 @@ def delete_all_data():
     if _is_cloud():
         for fname in files:
             try:
-                _r2_delete_file(_parquet_name(fname))
+                _r2_delete_file(_csv_name(fname))
             except Exception:
                 pass
             deleted.append(fname)
     else:
         for fname in files:
-            path = DATA_DIR / _parquet_name(fname)
+            path = DATA_DIR / _csv_name(fname)
             if path.exists():
                 path.unlink()
             deleted.append(fname)
@@ -601,7 +607,7 @@ def delete_all_data():
 
 
 def restore_from_zip(zip_bytes: bytes) -> list[str]:
-    """從 ZIP 檔還原所有 .xlsx / .parquet 檔案到 DATA_DIR，回傳已還原的檔名清單。"""
+    """從 ZIP 檔還原所有 .xlsx / .csv 檔案到 DATA_DIR，回傳已還原的檔名清單。"""
     restored: list[str] = []
     with _zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
         for name in zf.namelist():
@@ -609,17 +615,32 @@ def restore_from_zip(zip_bytes: bytes) -> list[str]:
             if not basename:
                 continue
             file_bytes = zf.read(name)
-            if basename.endswith(".parquet"):
-                # 直接寫入 parquet，不需轉換
+            if basename.endswith(".csv"):
+                # 直接寫入 CSV，不需轉換
                 if _is_cloud():
                     _r2_write_bytes(basename, file_bytes)
-                    # Clear session state cache for the corresponding xlsx logical name
                     xlsx_name = basename.rsplit(".", 1)[0] + ".xlsx"
-                    st.session_state.pop(f"_df_cache_{xlsx_name}", None)                    
+                    st.session_state.pop(f"_df_cache_{xlsx_name}", None)
                 else:
                     (DATA_DIR / basename).write_bytes(file_bytes)
-                # Return logical xlsx name for consistency
                 restored.append(basename.rsplit(".", 1)[0] + ".xlsx")
+            elif basename.endswith(".parquet"):
+                # 向後相容：還原舊版 parquet 備份，轉換為 CSV
+                try:
+                    df = pd.read_parquet(io.BytesIO(file_bytes))
+                    csv_name = basename.rsplit(".", 1)[0] + ".csv"
+                    buf = io.BytesIO()
+                    df.to_csv(buf, index=False, encoding="utf-8-sig")
+                    csv_bytes = buf.getvalue()
+                    if _is_cloud():
+                        _r2_write_bytes(csv_name, csv_bytes)
+                        xlsx_name = basename.rsplit(".", 1)[0] + ".xlsx"
+                        st.session_state.pop(f"_df_cache_{xlsx_name}", None)
+                    else:
+                        (DATA_DIR / csv_name).write_bytes(csv_bytes)
+                    restored.append(basename.rsplit(".", 1)[0] + ".xlsx")
+                except Exception:
+                    pass
             elif basename.endswith(".xlsx"):
                 save_raw_bytes(basename, file_bytes)
                 restored.append(basename)
