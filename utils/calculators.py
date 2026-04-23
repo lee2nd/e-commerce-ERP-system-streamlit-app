@@ -55,13 +55,13 @@ def auto_match_compare_table(
                 stg_name_map[combo_code] = f"組合:{parts}"
 
     # ── 為每個 (平台商品名稱, 平台) 選出代表 SKU ──
-    # 若同一商品有多個 SKU（跨不同訂單），優先選「不在入庫中」的 SKU，
-    # 確保對照表能正確顯示「未匹配」，與日報表邏輯一致
+    # 若同一商品有多個 SKU（跨不同訂單），優先選「已在入庫中」的 SKU；
+    # 若無任何 SKU 匹配，取第一個（字母序最小，確保結果穩定）。
     _sku_records = []
-    for (prod_name, plat), grp in sku_all.groupby(["平台商品名稱", "平台"], sort=False):
-        skus = grp["貨號"].tolist()
-        unmatched_skus = [s for s in skus if s not in stg_name_map]
-        chosen = unmatched_skus[0] if unmatched_skus else skus[-1]
+    for (prod_name, plat), grp in sku_all.groupby(["平台商品名稱", "平台"], sort=True):
+        skus = sorted(grp["貨號"].tolist())
+        matched_skus = [s for s in skus if s in stg_name_map]
+        chosen = matched_skus[0] if matched_skus else skus[0]
         _sku_records.append({"平台商品名稱": prod_name, "平台": plat, "_sku": chosen})
     sku_src = pd.DataFrame(_sku_records) if _sku_records else pd.DataFrame(columns=["平台商品名稱", "平台", "_sku"])
 
@@ -87,8 +87,18 @@ def auto_match_compare_table(
         for c in result_cols:
             if c not in existing_compare_df.columns:
                 existing_compare_df[c] = ""
-        # 更新現有列的 貨號/主貨號/入庫品名
-        existing = _enrich(existing_compare_df[["平台商品名稱", "平台"]].copy())
+        # 先對現有對照表去重，避免歷史重複列影響結果
+        existing_compare_df = existing_compare_df.drop_duplicates(
+            subset=["平台商品名稱", "平台"]
+        ).reset_index(drop=True)
+
+        # 已匹配的列保留原貨號，不重新掃描；只對「未匹配」的列嘗試重新匹配
+        _matched_mask = ~existing_compare_df["入庫品名"].astype(str).isin(["", "未匹配"])
+        existing_matched = existing_compare_df[_matched_mask][result_cols].copy()
+        existing_unmatched = _enrich(
+            existing_compare_df[~_matched_mask][["平台商品名稱", "平台"]].copy()
+        )
+
         # 新增尚未存在的項目
         known = set(
             existing_compare_df["平台商品名稱"].astype(str)
@@ -99,7 +109,10 @@ def auto_match_compare_table(
               + "||" + all_prods["平台"].astype(str)).isin(known)
         ].copy()
         new_only = _enrich(new_only)
-        result = pd.concat([existing[result_cols], new_only[result_cols]], ignore_index=True)
+        result = pd.concat(
+            [existing_matched, existing_unmatched[result_cols], new_only[result_cols]],
+            ignore_index=True,
+        )
     else:
         result = _enrich(all_prods)[result_cols].copy()
 

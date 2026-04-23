@@ -128,8 +128,7 @@ def _load_excel(filename: str) -> pd.DataFrame:
         if csv_path.exists() and csv_path.stat().st_size > 0:
             try:
                 return pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
-            except Exception as e:
-                st.warning(f"Failed to load {filename}: {e}")
+            except:  # noqa: E722
                 return pd.DataFrame()
         return pd.DataFrame()
 
@@ -224,6 +223,7 @@ def load_compare_table() -> pd.DataFrame:
 
 
 def save_compare_table(df: pd.DataFrame):
+    df = df.drop_duplicates(subset=["平台商品名稱", "平台"]).reset_index(drop=True)
     _save_excel(df, "對照表.xlsx")
     load_compare_table.clear()  # type: ignore[attr-defined]
 
