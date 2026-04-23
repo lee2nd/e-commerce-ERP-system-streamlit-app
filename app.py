@@ -59,6 +59,11 @@ _FILE_META: list[tuple[str, str, str]] = [
     ("自建訂單.xlsx","自建訂單",    "自建訂單（其他平台）累積記錄（原有新增請至【📥 匯入資料】頁面）"),
 ]
 
+@st.cache_data(ttl=300)
+def _load_csv_bytes_cached(fname: str) -> bytes | None:
+    return read_raw_csv_bytes(fname)
+
+
 # ── 一鍵下載 ZIP ──────────────────────────────────────────────
 st.markdown("#### ⬇️ 下載全部資料")
 
@@ -105,9 +110,7 @@ if _uploaded_zip:
             zip_data = _uploaded_zip.read()
             restored = restore_from_zip(zip_data)
             if restored:
-                # 清除舊的下載快取
-                for _f, *_ in _FILE_META:
-                    st.session_state.pop(f"_dl_{_f}", None)
+                _load_csv_bytes_cached.clear()
                 st.session_state.pop("_zip_bytes", None)
                 ts = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                 st.session_state["_toast_restore"] = f"✅ 已還原 {len(restored)} 個檔案：{', '.join(restored)}（{ts}）"
@@ -144,9 +147,7 @@ with _col_del2:
     ):
         with st.spinner("刪除中…"):
             deleted = delete_all_data()
-        # 清除所有下載快取
-        for _f, *_ in _FILE_META:
-            st.session_state.pop(f"_dl_{_f}", None)
+        _load_csv_bytes_cached.clear()
         st.session_state.pop("_zip_bytes", None)
         if deleted:
             st.session_state["_toast_delete"] = ("success", f"✅ 已刪除 {len(deleted)} 個檔案：{', '.join(deleted)}")
@@ -169,20 +170,7 @@ for fname, display_name, note in _FILE_META:
         st.caption(note)
 
         # ── 下載該檔案 ────────────────────────────────────────
-        if st.button(f"📥 載入「{display_name}」下載連結", key=f"load_{fname}"):
-            # 清除其他檔案的下載快取 & ZIP 快取，避免累積記憶體
-            for _f, *_ in _FILE_META:
-                if _f != fname:
-                    st.session_state.pop(f"_dl_{_f}", None)
-            st.session_state.pop("_zip_bytes", None)
-            with st.spinner("讀取中…"):
-                raw = read_raw_csv_bytes(fname)
-            if raw:
-                st.session_state[f"_dl_{fname}"] = raw
-            else:
-                st.warning("目前無資料")
-
-        _dl_data = st.session_state.get(f"_dl_{fname}")
+        _dl_data = _load_csv_bytes_cached(fname)
         if _dl_data:
             _dl_csv_name = fname.rsplit(".", 1)[0] + ".csv"
             st.download_button(
@@ -192,6 +180,8 @@ for fname, display_name, note in _FILE_META:
                 mime="text/csv",
                 key=f"dl_{fname}",
             )
+        else:
+            st.info("目前無資料")
 
         st.markdown("---")
 
@@ -208,10 +198,9 @@ for fname, display_name, note in _FILE_META:
                 file_bytes = uploaded.read()
                 try:
                     save_raw_bytes(uploaded.name, file_bytes, cache_key=fname)
+                    _load_csv_bytes_cached.clear()
                     ts = datetime.now(tz=TZ_TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
                     st.session_state[f"_ow_ts_{fname}"] = ts
-                    # 讓下載快取失效
-                    st.session_state.pop(f"_dl_{fname}", None)
                     st.session_state.pop("_zip_bytes", None)
                     st.session_state[f"_toast_ow_{fname}"] = f"✅ 「{display_name}」已全覆蓋上傳（{uploaded.name}）！（{ts}）"
                     st.rerun()
