@@ -187,8 +187,10 @@ def _build_platform_key(row: pd.Series, platform: str) -> str:
         variant = _cs(row.get("Item Variant", ""))
         return f"{name}::{variant}"
     elif platform == "MO店":
-        name = _cs(row.get("商品名稱", ""))
-        return f"{name}::"
+        name  = _cs(row.get("商品名稱", ""))
+        spec1 = _cs(row.get("規格1", ""))
+        spec2 = _cs(row.get("規格2", ""))
+        return f"{name}::{spec1}::{spec2}"
     return ""
 
 

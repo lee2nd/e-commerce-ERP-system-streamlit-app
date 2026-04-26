@@ -201,14 +201,34 @@ def parse_mo(file_or_df) -> pd.DataFrame:
     out["日期"]     = pd.to_datetime(df["轉單日"].astype(str).str[:10], errors="coerce")
     out["平台"]     = "MO店"
 
-    name = df["商品名稱"].fillna("").astype(str)
-    out["平台商品名稱"] = name
+    name  = df["商品名稱"].fillna("").astype(str)
+    spec1 = df["規格1"].fillna("").astype(str) if "規格1" in df.columns else ""
+    spec2 = df["規格2"].fillna("").astype(str) if "規格2" in df.columns else ""
+    out["平台商品名稱"] = name + "::" + spec1 + "::" + spec2
 
-    out["貨號"] = df["商品原廠編號"].astype(str).str.strip() if "商品原廠編號" in df.columns else ""
+    # 貨號：優先用商品原廠編號，空值時改用商品編號
+    if "商品原廠編號" in df.columns:
+        sku = df["商品原廠編號"].fillna("").astype(str).str.strip()
+        if "商品編號" in df.columns:
+            fallback = df["商品編號"].fillna("").astype(str).str.strip()
+            sku = sku.where(~sku.str.lower().isin(["", "nan", "none"]), fallback)
+        out["貨號"] = sku
+    elif "商品編號" in df.columns:
+        out["貨號"] = df["商品編號"].fillna("").astype(str).str.strip()
+    else:
+        out["貨號"] = ""
+
     out["數量"] = pd.to_numeric(df["數量"], errors="coerce").fillna(0).astype(int)
     out["單價"] = pd.to_numeric(df["商品售價"], errors="coerce").fillna(0)
     out["金額"] = out["數量"] * out["單價"]
-    out["賣家折扣"] = 0
+
+    # 賣家折扣：加總各折扣欄位
+    disc_cols = ["全站商店抵用券", "mo點/mo幣", "單品折價券(商品自折)", "行銷活動促銷(商品自折)", "單店抵用券(商品自折)"]
+    disc_sum = sum(
+        pd.to_numeric(df[c], errors="coerce").fillna(0).abs()
+        for c in disc_cols if c in df.columns
+    )
+    out["賣家折扣"] = disc_sum if not isinstance(disc_sum, int) else 0
 
     # 訂單狀態
     order_stat = df["訂單狀態"].fillna("").astype(str)

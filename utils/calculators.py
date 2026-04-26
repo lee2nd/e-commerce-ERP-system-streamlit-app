@@ -783,8 +783,8 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         coupon = (abs(_n(row.get("單品折價券(商品自折)", 0)))
                   + abs(_n(row.get("行銷活動促銷(商品自折)", 0)))
                   + abs(_n(row.get("單店抵用券(商品自折)", 0))))
-        buyer_ship = _n(row.get("客人支付運費", 0))
-        plat_ship = abs(_n(row.get("商品滿額免運費", 0)))
+        buyer_ship = _n(row.get("客人支付運費", 0)) + abs(_n(row.get("商品滿額免運費", 0)))
+        plat_ship = abs(_n(row.get("平台補貼運費", 0)))
         actual_ship = abs(_n(row.get("預估平台代扣運費(鑑賞期後:平台代扣運費)", 0)))
         tx_fee = abs(_n(row.get("成交手續費", 0)))
         svc_fee_pre = abs(_n(row.get("預購商品服務費", 0)))
@@ -794,10 +794,8 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         pay_fee = abs(_n(row.get("金流與系統處理費", 0)))
         invoice_fee = abs(_n(row.get("發票處理費", 0)))
 
-        # 未取貨/退貨運費：已回收 AND 配送異常 → 活動服務費 + 訂單進帳金額
-        ret_ship = 0.0
-        if order_stat in ("已回收", "配送異常"):
-            ret_ship = abs(_n(row.get("活動服務費", 0))) + abs(_n(row.get("訂單進帳金額", 0)))
+        # 未取貨/退貨運費：退貨/未取貨 → 預估平台代扣運費
+        ret_ship = actual_ship if status in ("退貨", "未取貨") else 0.0
 
         records.append({
             "_oid": oid,
@@ -834,12 +832,12 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         buyer_ship = f["_buyer_ship"]
         plat_ship = f["_plat_ship"]
         actual_ship = f["_actual_ship"]
-        logistics_diff = buyer_ship - actual_ship
+        logistics_diff = actual_ship - buyer_ship
         ret_ship = sum(r["_ret_ship"] for r in rows)
         tx_fee = sum(r["_tx_fee"] for r in rows) if not is_ret else 0
         other_svc = sum(r["_other_svc"] for r in rows) if not is_ret else 0
         pay_fee = f["_pay_fee"] if not is_ret else 0
-        invoice_fee = f["_invoice_fee"] if not is_ret else 0
+        invoice_fee = f["_invoice_fee"]  # 退貨/未取貨仍保留發票處理費
 
         if is_ret:
             buyer_ship = 0
@@ -852,8 +850,9 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         profit = total_amt - total_cost
 
         item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
+        date = min(r["_date"] for r in rows)  # 相同訂單取最早日期（退貨後轉單日會更新）
         result.append({
-            "日期": f["_date"], "訂單編號": oid, "訂單狀態": status,
+            "日期": date, "訂單編號": oid, "訂單狀態": status,
             "商品名稱": item_name_str, "貨號": sku_str,
             "訂單金額": round(total_amt, 0),
             "折扣優惠": round(coupon, 0),
