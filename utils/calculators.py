@@ -783,7 +783,7 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         coupon = (abs(_n(row.get("單品折價券(商品自折)", 0)))
                   + abs(_n(row.get("行銷活動促銷(商品自折)", 0)))
                   + abs(_n(row.get("單店抵用券(商品自折)", 0))))
-        buyer_ship = _n(row.get("客人支付運費", 0)) + abs(_n(row.get("商品滿額免運費", 0)))
+        buyer_ship = _n(row.get("客人支付運費", 0)) + _n(row.get("商品滿額免運費", 0))
         plat_ship = abs(_n(row.get("平台補貼運費", 0)))
         actual_ship = abs(_n(row.get("預估平台代扣運費(鑑賞期後:平台代扣運費)", 0)))
         tx_fee = abs(_n(row.get("成交手續費", 0)))
