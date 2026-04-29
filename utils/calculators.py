@@ -822,56 +822,181 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
     for oid, grp in _groupby(records, key=lambda x: x["_oid"]):
         rows = list(grp)
         f = rows[0]
+
+        # 檢測部份退貨
+        has_return = any(r["_status"] in ("退貨", "未取貨") for r in rows)
+        is_full_return = all(r["_status"] in ("退貨", "未取貨") for r in rows)
+        is_partial_return = has_return and not is_full_return
+
         status = f["_status"]
-        is_ret = status in ("退貨", "未取貨")
+        date = min(r["_date"] for r in rows)
 
-        total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
-        total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
+        if is_partial_return:
+            # 部份退貨：拆成兩行——已完成（保留商品）+ 退貨（退回商品）
+            retained_items = []
+            retained_cost = 0
+            retained_amt = 0
+            returned_items = []
+            returned_cost = 0
 
-        coupon = f["_coupon"] if not is_ret else 0  # 費用只從第一行取，不累加
-        buyer_ship = f["_buyer_ship"]
-        plat_ship = f["_plat_ship"]
-        actual_ship = f["_actual_ship"]
-        logistics_diff = actual_ship - buyer_ship
-        ret_ship = f["_ret_ship"]  # 費用只從第一行取，不累加
-        tx_fee = f["_tx_fee"] if not is_ret else 0  # 費用只從第一行取，不累加
-        other_svc = f["_other_svc"] if not is_ret else 0  # 費用只從第一行取，不累加
-        pay_fee = f["_pay_fee"] if not is_ret else 0
-        invoice_fee = f["_invoice_fee"]  # 退貨/未取貨仍保留發票處理費
+            for r in rows:
+                if r["_status"] in ("退貨", "未取貨"):
+                    returned_items.extend(r["_items"])
+                    returned_cost += r["_item_cost"]
+                else:
+                    retained_items.extend(r["_items"])
+                    retained_cost += r["_item_cost"]
+                    retained_amt += r["_line_amt"]
 
-        if is_ret:
-            buyer_ship = 0
-            plat_ship = 0
-            actual_ship = 0
-            logistics_diff = 0
+            coupon = f["_coupon"]
+            buyer_ship = f["_buyer_ship"]
+            plat_ship = f["_plat_ship"]
+            actual_ship = f["_actual_ship"]
+            logistics_diff = actual_ship - buyer_ship
+            ret_ship = f["_ret_ship"]
+            tx_fee = f["_tx_fee"]
+            other_svc = f["_other_svc"]
+            pay_fee = f["_pay_fee"]
+            invoice_fee = f["_invoice_fee"]
 
-        total_cost = (total_cost_item + coupon + logistics_diff + ret_ship
-                      + tx_fee + other_svc + pay_fee + invoice_fee)
-        profit = total_amt - total_cost
+            comp_matched = all(r["_matched"] for r in rows if r["_status"] not in ("退貨", "未取貨"))
+            ret_matched = all(r["_matched"] for r in rows if r["_status"] in ("退貨", "未取貨"))
 
-        item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
-        date = min(r["_date"] for r in rows)  # 相同訂單取最早日期（退貨後轉單日會更新）
-        result.append({
-            "日期": date, "訂單編號": oid, "訂單狀態": status,
-            "商品名稱": item_name_str, "貨號": sku_str,
-            "訂單金額": round(total_amt, 0),
-            "折扣優惠": round(coupon, 0),
-            "買家支付運費": round(buyer_ship, 0),
-            "平台補助運費": round(plat_ship, 0),
-            "實際運費支出": round(actual_ship, 0),
-            "物流處理費（運費差額）": round(logistics_diff, 0),
-            "未取貨/退貨運費": round(ret_ship, 0),
-            "成交手續費": round(tx_fee, 0),
-            "其他服務費": round(other_svc, 0),
-            "金流與系統處理費": round(pay_fee, 0),
-            "發票處理費": round(invoice_fee, 0),
-            "其他費用": 0,
-            "商品成本": round(total_cost_item, 0),
-            "總成本": round(total_cost, 0),
-            "淨利": round(profit, 0),
-            "備註": "" if all(r["_matched"] for r in rows) else "未匹配",
-            "平台": "MO店",
-        })
+            # 已完成行：保留商品、一般費用歸此行
+            item_name_str, sku_str = _build_item_strings(retained_items)
+            total_cost_comp = retained_cost + coupon + logistics_diff + tx_fee + other_svc + pay_fee + invoice_fee
+            profit_comp = retained_amt - total_cost_comp
+
+            result.append({
+                "日期": date, "訂單編號": oid, "訂單狀態": "已完成",
+                "商品名稱": item_name_str, "貨號": sku_str,
+                "訂單金額": round(retained_amt, 0),
+                "折扣優惠": round(coupon, 0),
+                "買家支付運費": round(buyer_ship, 0),
+                "平台補助運費": round(plat_ship, 0),
+                "實際運費支出": round(actual_ship, 0),
+                "物流處理費（運費差額）": round(logistics_diff, 0),
+                "未取貨/退貨運費": 0,
+                "成交手續費": round(tx_fee, 0),
+                "其他服務費": round(other_svc, 0),
+                "金流與系統處理費": round(pay_fee, 0),
+                "發票處理費": round(invoice_fee, 0),
+                "其他費用": 0,
+                "商品成本": round(retained_cost, 0),
+                "總成本": round(total_cost_comp, 0),
+                "淨利": round(profit_comp, 0),
+                "備註": ("未匹配、部份退貨" if not comp_matched else "部份退貨"),
+                "平台": "MO店",
+            })
+
+            # 退貨行：退回商品、費用均為 0，只計退貨運費和發票處理費
+            item_name_str_ret, sku_str_ret = _build_item_strings(returned_items)
+            total_cost_ret = returned_cost + ret_ship
+            profit_ret = 0 - total_cost_ret
+
+            result.append({
+                "日期": date, "訂單編號": oid, "訂單狀態": "退貨",
+                "商品名稱": item_name_str_ret, "貨號": sku_str_ret,
+                "訂單金額": 0,
+                "折扣優惠": 0,
+                "買家支付運費": 0,
+                "平台補助運費": 0,
+                "實際運費支出": 0,
+                "物流處理費（運費差額）": 0,
+                "未取貨/退貨運費": round(ret_ship, 0),
+                "成交手續費": 0,
+                "其他服務費": 0,
+                "金流與系統處理費": 0,
+                "發票處理費": 0,
+                "其他費用": 0,
+                "商品成本": 0,
+                "總成本": round(total_cost_ret, 0),
+                "淨利": round(profit_ret, 0),
+                "備註": ("未匹配、部份退貨" if not ret_matched else "部份退貨"),
+                "平台": "MO店",
+            })
+        elif is_full_return:
+            # 整單退貨：金額與商品成本歸零，只計退貨運費和發票處理費
+            display_items = [it for r in rows for it in r["_items"]]
+            ret_ship = f["_ret_ship"]
+            invoice_fee = f["_invoice_fee"]
+            is_matched = all(r["_matched"] for r in rows)
+
+            item_name_str, sku_str = _build_item_strings(display_items)
+            total_cost = ret_ship + invoice_fee
+            profit = 0 - total_cost
+
+            result.append({
+                "日期": date, "訂單編號": oid, "訂單狀態": "退貨",
+                "商品名稱": item_name_str, "貨號": sku_str,
+                "訂單金額": 0,
+                "折扣優惠": 0,
+                "買家支付運費": 0,
+                "平台補助運費": 0,
+                "實際運費支出": 0,
+                "物流處理費（運費差額）": 0,
+                "未取貨/退貨運費": round(ret_ship, 0),
+                "成交手續費": 0,
+                "其他服務費": 0,
+                "金流與系統處理費": 0,
+                "發票處理費": round(invoice_fee, 0),
+                "其他費用": 0,
+                "商品成本": 0,
+                "總成本": round(total_cost, 0),
+                "淨利": round(profit, 0),
+                "備註": ("未匹配" if not is_matched else ""),
+                "平台": "MO店",
+            })
+        else:
+            # 已完成 / 未取貨（單一狀態）
+            is_ret = status in ("退貨", "未取貨")
+            total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
+            total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
+
+            coupon = f["_coupon"] if not is_ret else 0
+            buyer_ship = f["_buyer_ship"]
+            plat_ship = f["_plat_ship"]
+            actual_ship = f["_actual_ship"]
+            logistics_diff = actual_ship - buyer_ship
+            ret_ship = f["_ret_ship"]
+            tx_fee = f["_tx_fee"] if not is_ret else 0
+            other_svc = f["_other_svc"] if not is_ret else 0
+            pay_fee = f["_pay_fee"] if not is_ret else 0
+            invoice_fee = f["_invoice_fee"]
+
+            if is_ret:
+                buyer_ship = 0
+                plat_ship = 0
+                actual_ship = 0
+                logistics_diff = 0
+
+            total_cost = (total_cost_item + coupon + logistics_diff + ret_ship
+                          + tx_fee + other_svc + pay_fee + invoice_fee)
+            profit = total_amt - total_cost
+
+            item_name_str, sku_str = _build_item_strings([it for r in rows for it in r["_items"]])
+            is_matched = all(r["_matched"] for r in rows)
+            result.append({
+                "日期": date, "訂單編號": oid, "訂單狀態": status,
+                "商品名稱": item_name_str, "貨號": sku_str,
+                "訂單金額": round(total_amt, 0),
+                "折扣優惠": round(coupon, 0),
+                "買家支付運費": round(buyer_ship, 0),
+                "平台補助運費": round(plat_ship, 0),
+                "實際運費支出": round(actual_ship, 0),
+                "物流處理費（運費差額）": round(logistics_diff, 0),
+                "未取貨/退貨運費": round(ret_ship, 0),
+                "成交手續費": round(tx_fee, 0),
+                "其他服務費": round(other_svc, 0),
+                "金流與系統處理費": round(pay_fee, 0),
+                "發票處理費": round(invoice_fee, 0),
+                "其他費用": 0,
+                "商品成本": round(total_cost_item, 0),
+                "總成本": round(total_cost, 0),
+                "淨利": round(profit, 0),
+                "備註": "" if is_matched else "未匹配",
+                "平台": "MO店",
+            })
     return result
 
 
