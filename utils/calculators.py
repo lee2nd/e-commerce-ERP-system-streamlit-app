@@ -828,14 +828,14 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
         total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
 
-        coupon = sum(r["_coupon"] for r in rows) if not is_ret else 0
+        coupon = f["_coupon"] if not is_ret else 0  # 費用只從第一行取，不累加
         buyer_ship = f["_buyer_ship"]
         plat_ship = f["_plat_ship"]
         actual_ship = f["_actual_ship"]
         logistics_diff = actual_ship - buyer_ship
-        ret_ship = sum(r["_ret_ship"] for r in rows)
-        tx_fee = sum(r["_tx_fee"] for r in rows) if not is_ret else 0
-        other_svc = sum(r["_other_svc"] for r in rows) if not is_ret else 0
+        ret_ship = f["_ret_ship"]  # 費用只從第一行取，不累加
+        tx_fee = f["_tx_fee"] if not is_ret else 0  # 費用只從第一行取，不累加
+        other_svc = f["_other_svc"] if not is_ret else 0  # 費用只從第一行取，不累加
         pay_fee = f["_pay_fee"] if not is_ret else 0
         invoice_fee = f["_invoice_fee"]  # 退貨/未取貨仍保留發票處理費
 
