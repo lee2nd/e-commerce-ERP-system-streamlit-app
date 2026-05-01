@@ -846,7 +846,7 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
                     retained_cost += r["_item_cost"]
                     retained_amt += r["_line_amt"]
 
-            coupon = f["_coupon"]
+            coupon = sum(r["_coupon"] for r in rows)
             buyer_ship = f["_buyer_ship"]
             plat_ship = f["_plat_ship"]
             actual_ship = f["_actual_ship"]
@@ -959,7 +959,7 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             total_amt = sum(r["_line_amt"] for r in rows) if not is_ret else 0
             total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
 
-            coupon = f["_coupon"] if not is_ret else 0
+            coupon = sum(r["_coupon"] for r in rows) if not is_ret else 0
             buyer_ship = f["_buyer_ship"]
             plat_ship = f["_plat_ship"]
             actual_ship = f["_actual_ship"]
