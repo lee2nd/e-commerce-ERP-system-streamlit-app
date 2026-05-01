@@ -759,12 +759,10 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
         if order_stat == "取消訂單":
             continue
 
-        if ret_reason == "配送異常結案":
+        if "配送異常" in order_stat or "配送異常" in ret_reason:
             status = "未取貨"
-        elif order_stat == "已回收":
+        elif "已回收" in order_stat:
             status = "退貨"
-        elif order_stat == "配送異常":
-            status = "未取貨"
         elif order_stat == "配送結束":
             status = "已完成"
         else:
@@ -894,8 +892,12 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             total_cost_ret = returned_cost + ret_ship
             profit_ret = 0 - total_cost_ret
 
+            # 部份退貨行：保留原始狀態（未取貨 / 退貨）
+            ret_statuses = {r["_status"] for r in rows if r["_status"] in ("退貨", "未取貨")}
+            partial_ret_status = "未取貨" if "未取貨" in ret_statuses else "退貨"
+
             result.append({
-                "日期": date, "訂單編號": oid, "訂單狀態": "退貨",
+                "日期": date, "訂單編號": oid, "訂單狀態": partial_ret_status,
                 "商品名稱": item_name_str_ret, "貨號": sku_str_ret,
                 "訂單金額": 0,
                 "折扣優惠": 0,
@@ -916,18 +918,22 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
                 "平台": "MO店",
             })
         elif is_full_return:
-            # 整單退貨：金額與商品成本歸零，只計退貨運費和發票處理費
+            # 整單退貨/未取貨：金額與商品成本歸零，只計退貨運費和發票處理費
             display_items = [it for r in rows for it in r["_items"]]
             ret_ship = f["_ret_ship"]
             invoice_fee = f["_invoice_fee"]
             is_matched = all(r["_matched"] for r in rows)
+
+            # 保留原始狀態（未取貨 / 退貨）
+            full_ret_statuses = {r["_status"] for r in rows}
+            full_ret_status = "未取貨" if "未取貨" in full_ret_statuses else "退貨"
 
             item_name_str, sku_str = _build_item_strings(display_items)
             total_cost = ret_ship + invoice_fee
             profit = 0 - total_cost
 
             result.append({
-                "日期": date, "訂單編號": oid, "訂單狀態": "退貨",
+                "日期": date, "訂單編號": oid, "訂單狀態": full_ret_status,
                 "商品名稱": item_name_str, "貨號": sku_str,
                 "訂單金額": 0,
                 "折扣優惠": 0,
