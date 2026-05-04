@@ -851,7 +851,10 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             plat_ship = f["_plat_ship"]
             actual_ship = f["_actual_ship"]
             logistics_diff = actual_ship - buyer_ship
-            ret_ship = f["_ret_ship"]
+            # 退貨運費和發票處理費應取自退貨行（非首行，首行可能是已完成狀態）
+            _ret_rows = [r for r in rows if r["_status"] in ("退貨", "未取貨")]
+            ret_ship = _ret_rows[0]["_ret_ship"] if _ret_rows else f["_ret_ship"]
+            ret_invoice_fee = _ret_rows[0]["_invoice_fee"] if _ret_rows else f["_invoice_fee"]
             tx_fee = f["_tx_fee"]
             other_svc = f["_other_svc"]
             pay_fee = f["_pay_fee"]
@@ -889,7 +892,7 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
 
             # 退貨行：退回商品、費用均為 0，只計退貨運費和發票處理費
             item_name_str_ret, sku_str_ret = _build_item_strings(returned_items)
-            total_cost_ret = ret_ship + invoice_fee
+            total_cost_ret = ret_ship + ret_invoice_fee
             profit_ret = 0 - total_cost_ret
 
             # 部份退貨行：保留原始狀態（未取貨 / 退貨）
@@ -909,7 +912,7 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
                 "成交手續費": 0,
                 "其他服務費": 0,
                 "金流與系統處理費": 0,
-                "發票處理費": round(invoice_fee, 0),
+                "發票處理費": round(ret_invoice_fee, 0),
                 "其他費用": 0,
                 "商品成本": 0,
                 "總成本": round(total_cost_ret, 0),
