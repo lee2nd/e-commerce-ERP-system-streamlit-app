@@ -846,7 +846,8 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
                     retained_cost += r["_item_cost"]
                     retained_amt += r["_line_amt"]
 
-            coupon = sum(r["_coupon"] for r in rows)
+            # 部份退貨：折扣只計已完成商品的折扣，退貨商品的折扣不計入
+            coupon = sum(r["_coupon"] for r in rows if r["_status"] not in ("退貨", "未取貨"))
             buyer_ship = f["_buyer_ship"]
             plat_ship = f["_plat_ship"]
             actual_ship = f["_actual_ship"]
@@ -921,10 +922,11 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
                 "平台": "MO店",
             })
         elif is_full_return:
-            # 整單退貨/未取貨：金額與商品成本歸零，只計退貨運費和發票處理費
+            # 整單退貨/未取貨：金額與商品成本歸零，計退貨運費、發票處理費及金流服務費
             display_items = [it for r in rows for it in r["_items"]]
             ret_ship = f["_ret_ship"]
             invoice_fee = f["_invoice_fee"]
+            pay_fee = f["_pay_fee"]
             is_matched = all(r["_matched"] for r in rows)
 
             # 保留原始狀態（未取貨 / 退貨）
@@ -932,7 +934,7 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             full_ret_status = "未取貨" if "未取貨" in full_ret_statuses else "退貨"
 
             item_name_str, sku_str = _build_item_strings(display_items)
-            total_cost = ret_ship + invoice_fee
+            total_cost = ret_ship + invoice_fee + pay_fee
             profit = 0 - total_cost
 
             result.append({
@@ -947,7 +949,7 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
                 "未取貨/退貨運費": round(ret_ship, 0),
                 "成交手續費": 0,
                 "其他服務費": 0,
-                "金流與系統處理費": 0,
+                "金流與系統處理費": round(pay_fee, 0),
                 "發票處理費": round(invoice_fee, 0),
                 "其他費用": 0,
                 "商品成本": 0,
