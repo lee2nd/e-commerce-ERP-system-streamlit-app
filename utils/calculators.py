@@ -864,9 +864,9 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             comp_matched = all(r["_matched"] for r in rows if r["_status"] not in ("退貨", "未取貨"))
             ret_matched = all(r["_matched"] for r in rows if r["_status"] in ("退貨", "未取貨"))
 
-            # 已完成行：保留商品、一般費用歸此行（發票處理費歸退貨行）
+            # 已完成行：保留商品、一般費用歸此行
             item_name_str, sku_str = _build_item_strings(retained_items)
-            total_cost_comp = retained_cost + coupon + logistics_diff + tx_fee + other_svc + pay_fee
+            total_cost_comp = retained_cost + coupon + logistics_diff + tx_fee + other_svc + pay_fee + invoice_fee
             profit_comp = retained_amt - total_cost_comp
 
             result.append({
