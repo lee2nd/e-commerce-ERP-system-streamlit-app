@@ -165,6 +165,9 @@ def _filter_easystore(df: pd.DataFrame) -> pd.DataFrame:
             _df["Fulfillment Service"].fillna("").astype(str).str.strip() == ""
         ) & (_df["Fulfillment Status"].fillna("").astype(str) == "Restocked")
         mask &= ~is_prestocked
+    # 退貨 / 退款：Financial Status 含 Refunded → 不出庫
+    if "Financial Status" in _df.columns:
+        mask &= ~_df["Financial Status"].fillna("").astype(str).str.contains("Refunded", case=False, na=False)
     # 取消訂購（未取貨）→ 不出庫
     if "Remark" in _df.columns:
         mask &= _df["Remark"].fillna("").astype(str).str.strip() != "取消訂購"
@@ -255,13 +258,14 @@ def _get_row_sku(row: pd.Series, platform: str) -> str:
 
 
 def _filter_mo(df: pd.DataFrame) -> pd.DataFrame:
-    """MO店：取消訂單跳過不出庫"""
+    """MO店：取消訂單、退貨跳過不出庫"""
     if df.empty:
         return df
     mask = pd.Series(True, index=df.index)
     if "訂單狀態" in df.columns:
         order_stat = df["訂單狀態"].fillna("").astype(str).str.strip()
-        mask &= ~order_stat.isin(["取消訂單", "已回收", "配送異常"])
+        mask &= ~order_stat.isin(["取消訂單", "配送異常"])
+        mask &= ~order_stat.str.contains("已回收", na=False)
     if "銷退原因" in df.columns:
         ret_reason = df["銷退原因"].fillna("").astype(str).str.strip()
         mask &= ret_reason != "配送異常結案"
@@ -340,8 +344,6 @@ def generate_delivery() -> pd.DataFrame:
                     total_component_items = sum(int(c["原料數量"]) for _, c in components.iterrows())
                     # 每件原料的單價 = 組合售價 / 總件數
                     unit_price = round(order_price / total_component_items, 2) if total_component_items > 0 else 0
-                    # 訂單總金額
-                    total_order_amount = round(order_price * order_qty, 2)
                     for _, comp in components.iterrows():
                         mat_sku = str(comp["原料貨號"]).strip()
                         mat_qty = int(comp["原料數量"])
