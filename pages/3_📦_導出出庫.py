@@ -159,15 +159,9 @@ def _filter_easystore(df: pd.DataFrame) -> pd.DataFrame:
         mask = _df["Item Name"].notna() & (_df["Item Name"].astype(str).str.strip() != "")
         _df = _df[mask].copy()
     mask = pd.Series(True, index=_df.index)
-    # 出貨前取消：Fulfillment Service 空 且 Fulfillment Status == Restocked
-    if "Fulfillment Service" in _df.columns and "Fulfillment Status" in _df.columns:
-        is_prestocked = (
-            _df["Fulfillment Service"].fillna("").astype(str).str.strip() == ""
-        ) & (_df["Fulfillment Status"].fillna("").astype(str) == "Restocked")
-        mask &= ~is_prestocked
-    # 退貨 / 退款：Financial Status 含 Refunded → 不出庫
-    if "Financial Status" in _df.columns:
-        mask &= ~_df["Financial Status"].fillna("").astype(str).str.contains("Refunded", case=False, na=False)
+    # Fulfillment Status == Restocked → 不出庫（含出貨前取消、退貨退款）
+    if "Fulfillment Status" in _df.columns:
+        mask &= _df["Fulfillment Status"].fillna("").astype(str).str.strip() != "Restocked"
     # 取消訂購（未取貨）→ 不出庫
     if "Remark" in _df.columns:
         mask &= _df["Remark"].fillna("").astype(str).str.strip() != "取消訂購"
