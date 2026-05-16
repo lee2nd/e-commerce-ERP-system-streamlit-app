@@ -358,7 +358,7 @@ def generate_delivery() -> pd.DataFrame:
                             "規格": comp_spec,
                             "出庫數量": total_mat_qty,
                             "單價": unit_price,
-                            "金額": total_order_amount,
+                            "金額": round(unit_price * total_mat_qty, 2),
                             "出庫日期": order_data["日期"],
                             "匹配狀態": "已匹配",
                             "平台": platform,
