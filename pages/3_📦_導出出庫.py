@@ -332,9 +332,16 @@ def generate_delivery() -> pd.DataFrame:
 
                 order_data = _get_order_data(row, platform)
                 order_qty = order_data["數量"]
+                order_price = order_data["單價"]  # 組合商品售價
 
                 if not combo.empty and combo_code:
                     components = combo[combo["組合貨號"].astype(str).str.strip() == combo_code]
+                    # 計算組合內所有原料的總件數，用於均分售價
+                    total_component_items = sum(int(c["原料數量"]) for _, c in components.iterrows())
+                    # 每件原料的單價 = 組合售價 / 總件數
+                    unit_price = round(order_price / total_component_items, 2) if total_component_items > 0 else 0
+                    # 訂單總金額
+                    total_order_amount = round(order_price * order_qty, 2)
                     for _, comp in components.iterrows():
                         mat_sku = str(comp["原料貨號"]).strip()
                         mat_qty = int(comp["原料數量"])
@@ -343,7 +350,6 @@ def generate_delivery() -> pd.DataFrame:
                         comp_name = comp_info.get("名稱", mat_sku)
                         comp_spec = comp_info.get("規格", "")
                         comp_main = comp_info.get("主貨號", mat_sku.split("-")[0] if "-" in mat_sku else mat_sku)
-                        comp_cost = comp_info.get("單位成本", 0)
                         records.append({
                             "訂單編號": order_data["訂單編號"],
                             "主貨號": comp_main,
@@ -351,8 +357,8 @@ def generate_delivery() -> pd.DataFrame:
                             "名稱": comp_name,
                             "規格": comp_spec,
                             "出庫數量": total_mat_qty,
-                            "單價": round(comp_cost, 2),
-                            "金額": round(comp_cost * total_mat_qty, 2),
+                            "單價": unit_price,
+                            "金額": total_order_amount,
                             "出庫日期": order_data["日期"],
                             "匹配狀態": "已匹配",
                             "平台": platform,
