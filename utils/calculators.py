@@ -279,7 +279,7 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             items_ret[0]["規格"] = items_ret[0]["規格"] or _s(row.get("商品選項名稱", ""))
 
         records.append({
-            "_oid": oid, "_date": _s(row.get("訂單成立日期", ""))[:10],
+            "_oid": oid, "_date": _s(row.get("訂單成立日期", "")).split(" ")[0],
             "_row_status": _row_status,
             "_has_ret": bool(ret_stat),        # 此列是否有退貨狀態
             "_effective_qty": effective_qty,   # 有效成交數量
@@ -445,7 +445,7 @@ def _process_ruten(df: pd.DataFrame, stg: dict, settings: dict, combo_df=None) -
         pay_fee = max(1, round((checkout_total + ruten_disc) * 0.015))
 
         records.append({
-            "_oid": oid, "_date": _s(row.get("結帳時間", ""))[:10].replace("/", "-"),
+            "_oid": oid, "_date": _s(row.get("結帳時間", "")).split(" ")[0].replace("/", "-"),
             "_status": status,
             "_items": items,
             "_line_amt": price * qty,
@@ -598,7 +598,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
         buyer_ship = _n(row.get("Shipping Fee", 0))
 
         records.append({
-            "_oid": oid, "_date": _s(row.get("Date", ""))[:10],
+            "_oid": oid, "_date": _s(row.get("Date", "")).split(" ")[0],
             "_status": status,
             "_items": items,
             "_line_amt": price * qty,
@@ -679,7 +679,7 @@ def _process_custom(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
 
         records.append({
             "_oid": oid,
-            "_date": _s(row.get("日期", ""))[:10].replace("/", "-"),
+            "_date": _s(row.get("日期", "")).split(" ")[0].replace("/", "-"),
             "_status": status,
             "_items": items,
             "_line_amt": price * qty,
@@ -797,7 +797,7 @@ def _process_mo(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
 
         records.append({
             "_oid": oid,
-            "_date": _s(row.get("轉單日", ""))[:10].replace("/", "-"),
+            "_date": _s(row.get("轉單日", "")).split(" ")[0].replace("/", "-"),
             "_status": status,
             "_items": items,
             "_line_amt": price * qty,

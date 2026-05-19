@@ -72,7 +72,7 @@ def parse_shopee(file_or_df: Union[IO[bytes], pd.DataFrame]) -> pd.DataFrame:
 
     out = pd.DataFrame()
     out["訂單編號"] = df[c_oid].astype(str).str.strip()
-    out["日期"]     = pd.to_datetime(df[c_date].astype(str).str[:10], errors="coerce")
+    out["日期"]     = pd.to_datetime(df[c_date].astype(str).str.split(" ").str[0], errors="coerce")
     out["平台"]     = "蝦皮"
 
     prod = df[c_prod].fillna("").astype(str)
@@ -113,7 +113,7 @@ def parse_ruten(file_or_df) -> pd.DataFrame:
 
     out = pd.DataFrame()
     out["訂單編號"] = df["訂單編號"].astype(str).str.strip()
-    out["日期"]     = pd.to_datetime(df["結帳時間"].astype(str).str[:10], errors="coerce")
+    out["日期"]     = pd.to_datetime(df["結帳時間"].astype(str).str.split(" ").str[0], errors="coerce")
     out["平台"]     = "露天"
 
     name = df["商品名稱"].fillna("").astype(str)
@@ -167,7 +167,7 @@ def parse_easystore(file_or_df) -> pd.DataFrame:
 
     out = pd.DataFrame()
     out["訂單編號"] = df["Order Name"].astype(str).str.strip()
-    out["日期"]     = pd.to_datetime(df["Date"].astype(str).str[:10], errors="coerce")
+    out["日期"]     = pd.to_datetime(df["Date"].astype(str).str.split(" ").str[0], errors="coerce")
     out["平台"]     = "官網"
 
     item_name = df["Item Name"].fillna("").astype(str)
@@ -198,7 +198,7 @@ def parse_mo(file_or_df) -> pd.DataFrame:
 
     out = pd.DataFrame()
     out["訂單編號"] = df["訂單編號"].astype(str).str.strip()
-    out["日期"]     = pd.to_datetime(df["轉單日"].astype(str).str[:10], errors="coerce")
+    out["日期"]     = pd.to_datetime(df["轉單日"].astype(str).str.split(" ").str[0], errors="coerce")
     out["平台"]     = "MO店"
 
     name  = df["商品名稱"].fillna("").astype(str)

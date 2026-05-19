@@ -200,19 +200,19 @@ def _get_order_data(row: pd.Series, platform: str) -> dict:
         ret_qty_raw = row.get("退貨數量", 0)
         ret_qty = int(_n(ret_qty_raw)) if pd.notna(ret_qty_raw) else 0
         price = row.get("商品活動價格") if pd.notna(row.get("商品活動價格")) else row.get("商品原價", 0)
-        date = str(row.get("訂單成立日期", ""))[:10]
+        date = str(row.get("訂單成立日期", "")).split(" ")[0]
     elif platform == "露天":
         qty = row.get("數量", 0)
         price = row.get("單價", 0)
-        date = str(row.get("結帳時間", ""))[:10]
+        date = str(row.get("結帳時間", "")).split(" ")[0]
     elif platform == "官網":
         qty = row.get("Quantity", 0)
         price = row.get("Item Price", 0)
-        date = str(row.get("Date", ""))[:10]
+        date = str(row.get("Date", "")).split(" ")[0]
     elif platform == "MO店":
         qty = row.get("數量", 0)
         price = row.get("商品售價", 0)
-        date = str(row.get("轉單日", ""))[:10]
+        date = str(row.get("轉單日", "")).split(" ")[0]
     else:
         qty, price, date = 0, 0, ""
     
@@ -438,7 +438,7 @@ def generate_delivery() -> pd.DataFrame:
                 _price = float(row.get("單價", 0)) if pd.notna(row.get("單價")) else 0.0
             except (ValueError, TypeError):
                 _price = 0.0
-            _date = str(row.get("日期", ""))[:10].replace("/", "-")
+            _date = str(row.get("日期", "")).split(" ")[0].replace("/", "-")
             _oid = str(row.get("訂單編號", "")).strip()
             _stg_info = stg_sku_lookup.get(_sku, {})
             _prod_name = _stg_info.get("名稱", "") if _stg_info else ""
