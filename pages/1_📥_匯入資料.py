@@ -345,7 +345,7 @@ def _render_order_tab():
     _PLAT_COL_COUNT = {
         "蝦皮": 57,
         "露天": 26,
-        "官網": (77, 81),
+        "官網": 81,
         "MO店": 81,
     }
 
@@ -354,21 +354,13 @@ def _render_order_tab():
         expected = _PLAT_COL_COUNT.get(selected_platform)
         if expected is None:
             return True, ""
-        # 支援多種欄位數（官網新舊版格式）
-        if isinstance(expected, tuple):
-            if col_count in expected:
-                return True, ""
-            expected_str = "/".join(str(e) for e in expected)
-        else:
-            if col_count == expected:
-                return True, ""
-            expected_str = str(expected)
+        if col_count == expected:
+            return True, ""
         # 嘗試辨識實際平台
         for pname, pcnt in _PLAT_COL_COUNT.items():
-            match_vals = pcnt if isinstance(pcnt, tuple) else (pcnt,)
-            if col_count in match_vals and pname != selected_platform:
-                return False, f"檔案欄位數不符！您選擇了 **{selected_platform}**（應為 {expected_str} 欄），但檔案有 **{col_count}** 欄，看起來是 **{pname}** 的格式。"
-        return False, f"檔案欄位數不符！您選擇了 **{selected_platform}**（應為 {expected_str} 欄），但檔案有 **{col_count}** 欄，請確認上傳正確的檔案。"
+            if col_count == pcnt and pname != selected_platform:
+                return False, f"檔案欄位數不符！您選擇了 **{selected_platform}**（應為 {expected} 欄），但檔案有 **{col_count}** 欄，看起來是 **{pname}** 的格式。"
+        return False, f"檔案欄位數不符！您選擇了 **{selected_platform}**（應為 {expected} 欄），但檔案有 **{col_count}** 欄，請確認上傳正確的檔案。"
 
     if uploaded and st.button("🚀 開始匯入訂單", type="primary"):
         try:
