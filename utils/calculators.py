@@ -279,7 +279,7 @@ def _process_shopee(df: pd.DataFrame, stg: dict, combo_df=None) -> list[dict]:
             items_ret[0]["規格"] = items_ret[0]["規格"] or _s(row.get("商品選項名稱", ""))
 
         records.append({
-            "_oid": oid, "_date": _s(row.get("訂單成立日期", ""))[:10],
+            "_oid": oid, "_date": _s(row.get("訂單成立日期", "")).split(" ")[0].replace("/", "-"),
             "_row_status": _row_status,
             "_has_ret": bool(ret_stat),        # 此列是否有退貨狀態
             "_effective_qty": effective_qty,   # 有效成交數量
@@ -524,7 +524,8 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
 
     # forward-fill order-level columns
     order_cols = ["Order Name", "Date", "Subtotal", "Shipping Fee", "Order Discount",
-                  "Credit Used", "Financial Status", "Remark",
+                  "Credit Used", "Point Used", "Point Discount", "Shipping Tax", "Order Status",
+                  "Financial Status", "Remark",
                   "Fulfillment Service", "Fulfillment Status"]
     
     df = df.copy()
@@ -594,6 +595,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
 
         subtotal = _n(row.get("Subtotal", 0))
         order_disc = abs(_n(row.get("Order Discount", 0)))
+        point_disc = abs(_n(row.get("Point Discount", 0)))
         credit = abs(_n(row.get("Credit Used", 0)))
         buyer_ship = _n(row.get("Shipping Fee", 0))
 
@@ -606,6 +608,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
             "_matched": bool(stg_info),
             "_subtotal": subtotal,
             "_order_disc": order_disc,
+            "_point_disc": point_disc,
             "_credit": credit,
             "_buyer_ship": buyer_ship,
         })
@@ -623,7 +626,7 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
         total_amt = f["_subtotal"] if not is_ret else 0
         total_cost_item = sum(r["_item_cost"] for r in rows) if not is_ret else 0
 
-        coupon = (f["_order_disc"] + f["_credit"]) if not is_nontaken else 0  # 未取貨不計折扣優惠
+        coupon = (f["_order_disc"] + f["_point_disc"] + f["_credit"]) if not is_nontaken else 0  # 未取貨不計折扣優惠
         buyer_ship = f["_buyer_ship"]
         logistics_diff = actual_ship - buyer_ship
         ret_ship = actual_ship if is_ret else 0

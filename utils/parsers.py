@@ -72,7 +72,7 @@ def parse_shopee(file_or_df: Union[IO[bytes], pd.DataFrame]) -> pd.DataFrame:
 
     out = pd.DataFrame()
     out["訂單編號"] = df[c_oid].astype(str).str.strip()
-    out["日期"]     = pd.to_datetime(df[c_date].astype(str).str[:10], errors="coerce")
+    out["日期"]     = pd.to_datetime(df[c_date].astype(str).str.split(" ").str[0], errors="coerce")
     out["平台"]     = "蝦皮"
 
     prod = df[c_prod].fillna("").astype(str)
@@ -154,8 +154,9 @@ def parse_easystore(file_or_df) -> pd.DataFrame:
     order_cols = [
         "Order Name", "Order Number", "Date", "Channel",
         "Subtotal", "Shipping Fee", "Order Discount",
+        "Point Used", "Point Discount", "Shipping Tax", "Order Status",
         "Total Amount", "Financial Status", "Fulfillment Status",
-        "Refunded Amount",
+        "Refunded Amount", "Credit Used",
     ]
     for c in order_cols:
         if c in df.columns:
@@ -178,7 +179,11 @@ def parse_easystore(file_or_df) -> pd.DataFrame:
     out["數量"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     out["單價"] = pd.to_numeric(df["Item Price"], errors="coerce").fillna(0)
     out["金額"] = out["數量"] * out["單價"]
-    out["賣家折扣"] = pd.to_numeric(df.get("Order Discount", 0), errors="coerce").fillna(0).abs() # type: ignore
+    out["賣家折扣"] = (
+        pd.to_numeric(df.get("Order Discount", 0), errors="coerce").fillna(0).abs() # type: ignore
+        + pd.to_numeric(df.get("Point Discount", 0), errors="coerce").fillna(0).abs() # type: ignore
+        + pd.to_numeric(df.get("Credit Used", 0), errors="coerce").fillna(0).abs() # type: ignore
+    )
 
     out["訂單狀態"] = "正常"
     if "Financial Status" in df.columns:

@@ -200,7 +200,7 @@ def _get_order_data(row: pd.Series, platform: str) -> dict:
         ret_qty_raw = row.get("退貨數量", 0)
         ret_qty = int(_n(ret_qty_raw)) if pd.notna(ret_qty_raw) else 0
         price = row.get("商品活動價格") if pd.notna(row.get("商品活動價格")) else row.get("商品原價", 0)
-        date = str(row.get("訂單成立日期", ""))[:10]
+        date = str(row.get("訂單成立日期", "")).split(" ")[0].replace("/", "-")
     elif platform == "露天":
         qty = row.get("數量", 0)
         price = row.get("單價", 0)
