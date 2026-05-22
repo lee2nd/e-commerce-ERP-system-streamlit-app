@@ -144,27 +144,36 @@ def _filter_ruten(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _filter_easystore(df: pd.DataFrame) -> pd.DataFrame:
-    """官網：出貨前取消 (Fulfillment Service空+Restocked) 或 取消訂購 → 跳過不出庫"""
+    """官網：退貨、未取貨、取消訂單 → 跳過不出庫；僅已完成訂單出庫"""
     if df.empty:
         return df.copy()
     _df = df.copy()
     # forward-fill Order Name first, then group-by ffill other order-level fields
     if "Order Name" in _df.columns:
         _df["Order Name"] = _df["Order Name"].ffill()
-        _ff_cols = [c for c in ["Remark", "Fulfillment Service", "Fulfillment Status"] if c in _df.columns]
+        _ff_cols = [c for c in ["Order Status", "Financial Status", "Fulfillment Type",
+                                "Fulfillment Service", "Refunded Amount"] if c in _df.columns]
         if _ff_cols:
             _df[_ff_cols] = _df.groupby("Order Name")[_ff_cols].ffill()
     # 過濾空品項列（EasyStore 同一訂單多品項時，後面會有空列）
     if "Item Name" in _df.columns:
         mask = _df["Item Name"].notna() & (_df["Item Name"].astype(str).str.strip() != "")
         _df = _df[mask].copy()
-    mask = pd.Series(True, index=_df.index)
-    # Fulfillment Status == Restocked → 不出庫（含出貨前取消、退貨退款）
-    if "Fulfillment Status" in _df.columns:
-        mask &= _df["Fulfillment Status"].fillna("").astype(str).str.strip() != "Restocked"
-    # 取消訂購（未取貨）→ 不出庫
-    if "Remark" in _df.columns:
-        mask &= _df["Remark"].fillna("").astype(str).str.strip() != "取消訂購"
+
+    order_stat = _df["Order Status"].fillna("").astype(str).str.strip() if "Order Status" in _df.columns else pd.Series("", index=_df.index)
+    fin_stat = _df["Financial Status"].fillna("").astype(str).str.strip() if "Financial Status" in _df.columns else pd.Series("", index=_df.index)
+    refunded_amt = pd.to_numeric(_df["Refunded Amount"], errors="coerce").fillna(0) if "Refunded Amount" in _df.columns else pd.Series(0, index=_df.index)
+    fulfill_type = _df["Fulfillment Type"].fillna("").astype(str).str.strip() if "Fulfillment Type" in _df.columns else pd.Series("", index=_df.index)
+    fulfill_svc = _df["Fulfillment Service"].fillna("").astype(str).str.strip() if "Fulfillment Service" in _df.columns else pd.Series("", index=_df.index)
+
+    # 退貨：不出庫
+    cond_return = (order_stat == "Open") & (fin_stat == "Refunded") & (refunded_amt < 0)
+    # 未取貨：不出庫
+    cond_nontaken = (order_stat == "Cancelled") & (fin_stat == "Cash On Delivery") & (fulfill_type == "Pick-up") & (fulfill_svc != "")
+    # 取消訂單：不出庫
+    cond_cancel = (order_stat == "Cancelled") & ~cond_nontaken
+
+    mask = ~(cond_return | cond_nontaken | cond_cancel)
     return _df[mask].copy()
 
 

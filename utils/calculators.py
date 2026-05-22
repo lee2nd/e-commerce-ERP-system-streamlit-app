@@ -2,7 +2,6 @@
 業務邏輯計算：對照表匹配、日報表 / 月報表 / 出庫 / 庫存明細產生。
 """
 import pandas as pd
-from typing import cast
 pd.set_option('future.no_silent_downcasting', True)
 
 # ══════════════════════════════════════════════════════════════
@@ -526,7 +525,8 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
     order_cols = ["Order Name", "Date", "Subtotal", "Shipping Fee", "Order Discount",
                   "Credit Used", "Point Used", "Point Discount", "Shipping Tax", "Order Status",
                   "Financial Status", "Remark",
-                  "Fulfillment Service", "Fulfillment Status"]
+                  "Fulfillment Service", "Fulfillment Status", "Fulfillment Type",
+                  "Refunded Amount"]
     
     df = df.copy()
     
@@ -540,20 +540,6 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
         if valid_cols:
             # 3. 一次性對所有目標欄位進行 groupby + ffill (效能更好，且不用 lambda)
             df[valid_cols] = df.groupby("Order Name")[valid_cols].ffill()
-    # 預先計算每筆訂單的最後一列 Transaction Status
-    _tx_col = next((c for c in ("Transaction status", "Transaction Status") if c in df.columns), None)
-    last_tx_status: dict[str, str] = {}
-
-    if _tx_col and "Order Name" in df.columns:
-        _tx_df = df[["Order Name", _tx_col]].copy()
-        _tx_df[_tx_col] = _tx_df[_tx_col].fillna("").astype(str).str.strip()
-        _tx_df = _tx_df[_tx_df[_tx_col] != ""]
-        
-        if not _tx_df.empty:
-            # Use cast to silence the type checker
-            raw_dict = _tx_df.groupby("Order Name")[_tx_col].last().to_dict()
-            last_tx_status = cast(dict[str, str], raw_dict)
-
     if "Item Name" in df.columns:
         df = df[df["Item Name"].notna() & (df["Item Name"].astype(str).str.strip() != "")]
 
@@ -563,22 +549,21 @@ def _process_easystore(df: pd.DataFrame, stg: dict, settings: dict, combo_df=Non
         if not oid:
             continue
 
-        fulfill_svc = _s(row.get("Fulfillment Service", ""))
-        fulfill_stat = _s(row.get("Fulfillment Status", ""))
-
-        # 未出貨，取消訂單：Fulfillment Service 為空 且 Fulfillment Status = "Restocked"/"Unfulfilled" → 跳過
-        if not fulfill_svc and fulfill_stat in ("Restocked", "Unfulfilled"):
-            continue
-
+        order_status = _s(row.get("Order Status", ""))
+        fin_status = _s(row.get("Financial Status", ""))
         refunded_amt = _n(row.get("Refunded Amount", 0))
-        last_tx = last_tx_status.get(oid, "")
+        fulfill_type = _s(row.get("Fulfillment Type", ""))
+        fulfill_svc = _s(row.get("Fulfillment Service", ""))
 
-        # 已出貨，退貨：Fulfillment Service 不為空 且 Refunded Amount != 0
-        if fulfill_svc and refunded_amt != 0:
+        # 退貨：Order Status == "Open" and Financial Status == "Refunded" and Refunded Amount < 0
+        if order_status == "Open" and fin_status == "Refunded" and refunded_amt < 0:
             status = "退貨"
-        # 已出貨，未取貨：Fulfillment Service 不為空 且 (Fulfillment Status = "Restocked"/"Unfulfilled" 或 最後一筆 Transaction Status = "Pending")
-        elif fulfill_svc and (fulfill_stat in ("Restocked", "Unfulfilled") or last_tx == "Pending"):
+        # 未取貨：Order Status == "Cancelled" and Financial Status == "Cash On Delivery" and Fulfillment Type == "Pick-up" and Fulfillment Service not empty
+        elif order_status == "Cancelled" and fin_status == "Cash On Delivery" and fulfill_type == "Pick-up" and fulfill_svc:
             status = "未取貨"
+        # 取消訂單：Order Status == "Cancelled" → 不列入日報表
+        elif order_status == "Cancelled":
+            continue
         else:
             status = "已完成"
 

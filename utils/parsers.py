@@ -156,7 +156,7 @@ def parse_easystore(file_or_df) -> pd.DataFrame:
         "Subtotal", "Shipping Fee", "Order Discount",
         "Point Used", "Point Discount", "Shipping Tax", "Order Status",
         "Total Amount", "Financial Status", "Fulfillment Status",
-        "Refunded Amount", "Credit Used",
+        "Refunded Amount", "Credit Used", "Fulfillment Type", "Fulfillment Service",
     ]
     for c in order_cols:
         if c in df.columns:
@@ -185,13 +185,30 @@ def parse_easystore(file_or_df) -> pd.DataFrame:
         + pd.to_numeric(df.get("Credit Used", 0), errors="coerce").fillna(0).abs() # type: ignore
     )
 
-    out["訂單狀態"] = "正常"
-    if "Financial Status" in df.columns:
-        fs = df["Financial Status"].fillna("").astype(str)
-        out.loc[fs.str.contains("Refund|退款", case=False, na=False), "訂單狀態"] = "退貨"
-    if "Fulfillment Status" in df.columns:
-        ffs = df["Fulfillment Status"].fillna("").astype(str)
-        out.loc[ffs.str.contains("Cancel|取消", case=False, na=False), "訂單狀態"] = "已取消"
+    # 訂單狀態判定
+    out["訂單狀態"] = "已完成"
+    order_stat = df["Order Status"].fillna("").astype(str).str.strip() if "Order Status" in df.columns else pd.Series("", index=df.index)
+    fin_stat = df["Financial Status"].fillna("").astype(str).str.strip() if "Financial Status" in df.columns else pd.Series("", index=df.index)
+    refunded_amt = pd.to_numeric(df["Refunded Amount"], errors="coerce").fillna(0) if "Refunded Amount" in df.columns else pd.Series(0, index=df.index)
+    fulfill_type = df["Fulfillment Type"].fillna("").astype(str).str.strip() if "Fulfillment Type" in df.columns else pd.Series("", index=df.index)
+    fulfill_svc = df["Fulfillment Service"].fillna("").astype(str).str.strip() if "Fulfillment Service" in df.columns else pd.Series("", index=df.index)
+
+    # 1. 退貨：Order Status == "Open" and Financial Status == "Refunded" and Refunded Amount < 0
+    cond_return = (order_stat == "Open") & (fin_stat == "Refunded") & (refunded_amt < 0)
+    out.loc[cond_return, "訂單狀態"] = "退貨"
+
+    # 2. 未取貨：Order Status == "Cancelled" and Financial Status == "Cash On Delivery" and Fulfillment Type == "Pick-up" and Fulfillment Service not empty
+    cond_nontaken = (
+        (order_stat == "Cancelled") &
+        (fin_stat == "Cash On Delivery") &
+        (fulfill_type == "Pick-up") &
+        (fulfill_svc != "")
+    )
+    out.loc[cond_nontaken & ~cond_return, "訂單狀態"] = "未取貨"
+
+    # 3. 取消訂單：Order Status == "Cancelled" (其餘)
+    cond_cancel = (order_stat == "Cancelled") & ~cond_return & ~cond_nontaken
+    out.loc[cond_cancel, "訂單狀態"] = "取消訂單"
 
     out = out[out["訂單編號"].notna() & ~out["訂單編號"].isin(["", "nan"])]
     return out.reset_index(drop=True)
