@@ -567,3 +567,9 @@ MO店費用欄位對應：
 ## 密碼
 - **MOMO：** 87150737
 - **蝦皮：** 030812
+
+## Changelog
+
+### 2026/05/22
+- Project completed and delivered
+- Completed for **NT$50,000**.
